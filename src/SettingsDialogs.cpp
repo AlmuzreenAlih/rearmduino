@@ -28,9 +28,14 @@
 
 QString Preferences::defaultSketchbook()
 {
-    // Same default as the Arduino IDE: <Documents>/Arduino.
+    // Same defaults as the Arduino IDE / arduino-cli: <Documents>/Arduino on
+    // Windows and macOS, ~/Arduino on Linux.
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
     return QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
         .filePath(QStringLiteral("Arduino"));
+#else
+    return QDir::home().filePath(QStringLiteral("Arduino"));
+#endif
 }
 
 Preferences Preferences::load()
