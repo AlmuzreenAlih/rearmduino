@@ -40,6 +40,7 @@ add_executable(myide WIN32
     src/main.cpp
     src/MainWindow.cpp
     src/MainWindow.h
+    src/PortComboBox.h
 )
 
 target_include_directories(myide PRIVATE ${QSCINTILLA_INCLUDE_DIR})

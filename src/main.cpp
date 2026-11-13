@@ -6,6 +6,7 @@ int main(int argc, char *argv[])
 {
     QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
     QApplication app(argc, argv);
+    QApplication::setOrganizationName(QStringLiteral("myide"));   // QSettings location
     QApplication::setApplicationName(QStringLiteral("myide"));
 
     // Optional first argument: a sketch folder or .ino file.
