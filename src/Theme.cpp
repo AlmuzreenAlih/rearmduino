@@ -156,12 +156,58 @@ QPalette palette(Mode mode)
     return p;
 }
 
+namespace {
+// Thin, flat scrollbars without arrow buttons. Part of styleSheet(), and applied
+// on its own to the editors' scrollbars (styling whole editors is slow).
+const char kScrollBarQss[] = R"(
+QScrollBar:vertical { background: @editorBg@; width: 11px; margin: 0; border: none; }
+QScrollBar:horizontal { background: @editorBg@; height: 11px; margin: 0; border: none; }
+QScrollBar::handle:vertical { background: @border@; min-height: 32px; border-radius: 4px; margin: 2px; }
+QScrollBar::handle:horizontal { background: @border@; min-width: 32px; border-radius: 4px; margin: 2px; }
+QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover { background: @muted@; }
+QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; border: none; background: none; }
+QScrollBar::add-page, QScrollBar::sub-page { background: none; }
+QAbstractScrollArea::corner { background: @editorBg@; border: none; }
+)";
+
+QString replaceTokens(QString qss, const Colors &c)
+{
+    const QList<QPair<const char *, QColor>> tokens = {
+        {"@window@", c.window},
+        {"@editorBg@", c.editorBg},
+        {"@text@", c.text},
+        {"@muted@", c.textMuted},
+        {"@border@", c.border},
+        {"@hover@", c.hover},
+        {"@selection@", c.selection},
+        {"@primary@", c.primary},
+        {"@primaryHover@", c.primary.lighter(110)},
+        {"@primaryPressed@", c.primary.darker(112)},
+        {"@onPrimary@", c.onPrimary},
+        {"@secondary@", c.secondary},
+        {"@secondaryHover@", c.secondary.lighter(112)},
+        {"@secondaryPressed@", c.secondary.darker(112)},
+        {"@onSecondary@", c.onSecondary},
+        {"@tooltipBg@", c.tooltipBg},
+        {"@tooltipText@", c.tooltipText},
+    };
+    for (const auto &t : tokens)
+        qss.replace(QLatin1String(t.first), hex(t.second));
+    return qss;
+}
+} // namespace
+
+QString scrollBarStyleSheet(Mode mode)
+{
+    return replaceTokens(QString::fromLatin1(kScrollBarQss), colors(mode));
+}
+
 QString styleSheet(Mode mode)
 {
     const Colors c = colors(mode);
     // Flat, no shadows/animations. Tokens are replaced below. Applied to the
     // toolbar, menu bar, output pane and Serial Monitor only (see MainWindow::applyTheme).
-    QString qss = QStringLiteral(R"(
+    QString qss = QString::fromLatin1(kScrollBarQss) + QStringLiteral(R"(
 QToolBar#mainToolbar {
     background: @window@;
     border: none;
@@ -247,6 +293,14 @@ QToolButton#serialButton:hover { background: @hover@; }
 QToolButton#serialButton:checked { border-color: @primary@; background: @hover@; }
 
 QWidget#serialControls { background: @window@; }
+QToolButton#timestampButton {
+    background: @editorBg@;
+    border: 1px solid @border@;
+    border-radius: 6px;
+    padding: 5px 7px;
+}
+QToolButton#timestampButton:hover { border-color: @muted@; }
+QToolButton#timestampButton:checked { border-color: @primary@; background: @hover@; }
 QLineEdit {
     background: @editorBg@;
     color: @text@;
@@ -295,27 +349,7 @@ QMenu::item:disabled { color: @muted@; background: transparent; }
 QToolTip { background: @tooltipBg@; color: @tooltipText@; border: 1px solid @border@; padding: 4px 6px; }
 )");
 
-    const QList<QPair<const char *, QColor>> tokens = {
-        {"@window@", c.window},
-        {"@editorBg@", c.editorBg},
-        {"@text@", c.text},
-        {"@muted@", c.textMuted},
-        {"@border@", c.border},
-        {"@hover@", c.hover},
-        {"@selection@", c.selection},
-        {"@primary@", c.primary},
-        {"@primaryHover@", c.primary.lighter(110)},
-        {"@primaryPressed@", c.primary.darker(112)},
-        {"@onPrimary@", c.onPrimary},
-        {"@secondary@", c.secondary},
-        {"@secondaryHover@", c.secondary.lighter(112)},
-        {"@secondaryPressed@", c.secondary.darker(112)},
-        {"@onSecondary@", c.onSecondary},
-        {"@tooltipBg@", c.tooltipBg},
-        {"@tooltipText@", c.tooltipText},
-    };
-    for (const auto &t : tokens)
-        qss.replace(QLatin1String(t.first), hex(t.second));
+    qss = replaceTokens(qss, c);
 
     const QString chevron = chevronFile(c.textMuted);
     if (chevron.isEmpty())

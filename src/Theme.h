@@ -67,6 +67,7 @@ struct Colors {
 Colors colors(Mode mode);
 QPalette palette(Mode mode);
 QString styleSheet(Mode mode);
+QString scrollBarStyleSheet(Mode mode);   // just the scrollbar rules (for editor scrollbars)
 void applyToEditor(QsciScintilla *editor, QsciLexerCPP *lexer, Mode mode, const QFont &font);
 QColor logColor(LogKind kind, Mode mode);
 

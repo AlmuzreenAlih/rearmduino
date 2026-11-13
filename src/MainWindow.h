@@ -64,6 +64,7 @@ private:
     void clearEditorBindings(QsciScintilla *editor);
     void updateTabTitle(QsciScintilla *editor);
     void updateMarginWidth(QsciScintilla *editor);
+    void themeEditorScrollBars(QsciScintilla *editor, const QString &qss);
     void setupToolbar();
     QWidget *createOutputPane();
 

@@ -262,6 +262,7 @@ QsciScintilla *MainWindow::createEditor(const QString &filePath)
     clearEditorBindings(editor);
     Theme::applyToEditor(editor, static_cast<QsciLexerCPP *>(editor->lexer()), m_theme,
                          Theme::monoFont(m_editorPointSize));
+    themeEditorScrollBars(editor, Theme::scrollBarStyleSheet(m_theme));
     connect(editor, &QsciScintilla::linesChanged, this, [this, editor] { updateMarginWidth(editor); });
     connect(editor, &QsciScintilla::modificationChanged, this, [this, editor] {
         updateTabTitle(editor);
@@ -294,6 +295,25 @@ void MainWindow::setupEditor(QsciScintilla *editor)
     // line instead. (Raw messages: works on every QScintilla version.)
     editor->SendScintilla(QsciScintilla::SCI_SETSCROLLWIDTH, 1);
     editor->SendScintilla(QsciScintilla::SCI_SETSCROLLWIDTHTRACKING, 1);
+}
+
+// Only the scrollbars get the stylesheet (the whole editor would be slow), plus
+// a plain corner square where the two scrollbars meet. QScintilla editors keep
+// the palette they were created with, so this is also what makes the scrollbars
+// follow a runtime theme switch.
+void MainWindow::themeEditorScrollBars(QsciScintilla *editor, const QString &qss)
+{
+    editor->verticalScrollBar()->setStyleSheet(qss);
+    editor->horizontalScrollBar()->setStyleSheet(qss);
+    QWidget *corner = editor->cornerWidget();
+    if (!corner) {
+        corner = new QWidget;
+        corner->setAutoFillBackground(true);
+        editor->setCornerWidget(corner);
+    }
+    QPalette pal = corner->palette();
+    pal.setColor(QPalette::Window, Theme::colors(m_theme).editorBg);
+    corner->setPalette(pal);
 }
 
 QList<QsciScintilla *> MainWindow::editors() const
@@ -590,6 +610,7 @@ void MainWindow::toggleSerialMonitor(bool show)
             appendLog(text, isError ? Theme::LogKind::Error : Theme::LogKind::Command);
         });
         m_serial->setStyleSheet(Theme::styleSheet(m_theme));
+        m_serial->setTheme(m_theme);
         const int total = m_topSplitter->width();
         m_topSplitter->addWidget(m_serial);
         m_topSplitter->setStretchFactor(0, 3);
@@ -898,11 +919,15 @@ void MainWindow::applyTheme(Theme::Mode mode)
     themeSplitterHandles();
 
     const Theme::Colors c = Theme::colors(mode);
+    const QString scrollQss = Theme::scrollBarStyleSheet(mode);
     for (QsciScintilla *editor : editors()) {
         Theme::applyToEditor(editor, static_cast<QsciLexerCPP *>(editor->lexer()), mode,
                              Theme::monoFont(m_editorPointSize));
+        themeEditorScrollBars(editor, scrollQss);
         updateMarginWidth(editor);
     }
+    if (m_serial)
+        m_serial->setTheme(mode);
     m_serialAction->setIcon(Theme::svgIcon(QStringLiteral(":/icons/serial.svg"), c.text));
 
     m_verifyAction->setIcon(Theme::svgIcon(QStringLiteral(":/icons/verify.svg"), c.onSecondary));

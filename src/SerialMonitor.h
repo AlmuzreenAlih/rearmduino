@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Theme.h"
+
 #include <QByteArray>
 #include <QSerialPort>
 #include <QString>
@@ -12,6 +14,7 @@ class QPlainTextEdit;
 class QPushButton;
 class QTextDecoder;
 class QTimer;
+class QToolButton;
 
 // Serial Monitor panel (right side of the editor splitter). Created lazily on
 // first open. The port follows the toolbar's Port selection; it is opened while
@@ -31,6 +34,7 @@ public:
     void closePort();
     // Reopen after an upload: the board resets/re-enumerates, so retry briefly.
     void reopenWithRetry(int attemptsLeft = 10);
+    void setTheme(Theme::Mode mode);   // icon colors (the stylesheet is set by MainWindow)
 
 signals:
     void sent(const QString &text);          // text as typed, without line ending
@@ -55,6 +59,8 @@ private:
     QPushButton *m_sendButton = nullptr;
     QComboBox *m_baudCombo = nullptr;
     QComboBox *m_endingCombo = nullptr;
+    QToolButton *m_timestampButton = nullptr;
+    bool m_atLineStart = true;   // next received char starts a line (timestamp goes here)
 
     // Incoming data is batched (fast streams would otherwise flood the UI).
     QTextDecoder *m_decoder = nullptr;

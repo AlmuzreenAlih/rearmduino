@@ -7,5 +7,6 @@
     <file>icons/upload.svg</file>
     <file>icons/chevron-down.svg</file>
     <file>icons/serial.svg</file>
+    <file>icons/clock.svg</file>
   </qresource>
 </RCC>

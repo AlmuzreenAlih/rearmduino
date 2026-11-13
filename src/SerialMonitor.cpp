@@ -11,7 +11,9 @@
 #include <QSettings>
 #include <QTextCodec>
 #include <QTextCursor>
+#include <QTime>
 #include <QTimer>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 namespace {
@@ -79,8 +81,20 @@ SerialMonitor::SerialMonitor(QWidget *parent)
         if (baud == savedBaud)
             m_baudCombo->setCurrentIndex(m_baudCombo->count() - 1);
     }
+    // Timestamp toggle: prefixes each received line with its arrival time.
+    m_timestampButton = new QToolButton;
+    m_timestampButton->setObjectName(QStringLiteral("timestampButton"));
+    m_timestampButton->setCheckable(true);
+    m_timestampButton->setChecked(settings.value(QStringLiteral("serial/timestamps"), false).toBool());
+    m_timestampButton->setToolTip(tr("Show timestamps (HH:mm:ss.zzz) for received lines"));
+    m_timestampButton->setIconSize(QSize(16, 16));
+    connect(m_timestampButton, &QToolButton::toggled, this, [](bool on) {
+        QSettings().setValue(QStringLiteral("serial/timestamps"), on);
+    });
+
     optionsLayout->addWidget(m_endingCombo, 1);
     optionsLayout->addWidget(m_baudCombo, 1);
+    optionsLayout->addWidget(m_timestampButton);
     layout->addWidget(optionsRow);
 
     m_port = new QSerialPort(this);
@@ -222,21 +236,24 @@ void SerialMonitor::onReadyRead()
     const QByteArray data = m_port->readAll();
     if (data.isEmpty())
         return;
-    // Normalize line endings: \r\n and lone \r become \n.
+    // Normalize line endings (\r\n and lone \r become \n) and, if enabled, put
+    // the arrival time in front of each new line: "12:34:56.789 -> text".
     const QString text = m_decoder->toUnicode(data);
+    const bool stamps = m_timestampButton->isChecked();
+    const QString stamp = stamps ? QTime::currentTime().toString(QStringLiteral("HH:mm:ss.zzz -> ")) : QString();
     m_pending.reserve(m_pending.size() + text.size());
     for (QChar ch : text) {
-        if (ch == QLatin1Char('\r')) {
-            m_pending += QLatin1Char('\n');
-            m_lastWasCR = true;
-            continue;
-        }
         if (ch == QLatin1Char('\n') && m_lastWasCR) {
             m_lastWasCR = false;
-            continue;
+            continue;   // second half of \r\n
         }
-        m_lastWasCR = false;
+        m_lastWasCR = (ch == QLatin1Char('\r'));
+        if (m_lastWasCR)
+            ch = QLatin1Char('\n');
+        if (m_atLineStart && stamps)
+            m_pending += stamp;
         m_pending += ch;
+        m_atLineStart = (ch == QLatin1Char('\n'));
     }
     if (!m_flushTimer->isActive())
         m_flushTimer->start();
@@ -273,6 +290,11 @@ void SerialMonitor::onBaudChanged(int index)
     if (isOpen())
         m_port->setBaudRate(baud);
     updateHeader();
+}
+
+void SerialMonitor::setTheme(Theme::Mode mode)
+{
+    m_timestampButton->setIcon(Theme::svgIcon(QStringLiteral(":/icons/clock.svg"), Theme::colors(mode).text, 16));
 }
 
 void SerialMonitor::updateHeader()
