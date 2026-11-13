@@ -14,6 +14,7 @@ class QJsonObject;
 class QPlainTextEdit;
 class QSplitter;
 class QTextDecoder;
+class QToolBar;
 class QsciScintilla;
 class ArduinoLexer;
 class PortComboBox;
@@ -72,6 +73,9 @@ private:
     ArduinoLexer *m_lexer = nullptr;
     QPlainTextEdit *m_output = nullptr;
     QSplitter *m_topSplitter = nullptr;   // editor | (future) serial monitor
+    QSplitter *m_vSplitter = nullptr;     // top area / output pane
+    QToolBar *m_toolbar = nullptr;
+    QWidget *m_outputPane = nullptr;
     QAction *m_verifyAction = nullptr;
     QAction *m_uploadAction = nullptr;
     QAction *m_darkThemeAction = nullptr;

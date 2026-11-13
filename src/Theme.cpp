@@ -3,7 +3,9 @@
 #include <Qsci/qscilexercpp.h>
 #include <Qsci/qsciscintilla.h>
 
+#include <QApplication>
 #include <QDir>
+#include <QVector>
 #include <QFile>
 #include <QFileInfo>
 #include <QFontDatabase>
@@ -157,7 +159,8 @@ QPalette palette(Mode mode)
 QString styleSheet(Mode mode)
 {
     const Colors c = colors(mode);
-    // Flat, no shadows/animations. Tokens are replaced below.
+    // Flat, no shadows/animations. Tokens are replaced below. Applied to the
+    // toolbar, menu bar and output pane only (see MainWindow::applyTheme).
     QString qss = QStringLiteral(R"(
 QToolBar#mainToolbar {
     background: @window@;
@@ -205,10 +208,6 @@ QComboBox QAbstractItemView {
     outline: 0;
 }
 
-QSplitter::handle { background: @border@; }
-QSplitter::handle:horizontal { width: 3px; }
-QSplitter::handle:vertical { height: 3px; }
-
 QLabel#outputHeader {
     background: @window@;
     color: @muted@;
@@ -232,7 +231,6 @@ QMenu { background: @window@; color: @text@; border: 1px solid @border@; padding
 QMenu::item { padding: 5px 24px 5px 24px; border-radius: 4px; }
 QMenu::item:selected { background: @hover@; }
 
-QStatusBar { background: @window@; color: @muted@; }
 QToolTip { background: @tooltipBg@; color: @tooltipText@; border: 1px solid @border@; padding: 4px 6px; }
 )");
 
@@ -328,8 +326,13 @@ QColor logColor(LogKind kind, Mode mode)
 
 QIcon svgIcon(const QString &resource, const QColor &color, int size)
 {
+    // Only 1x and the current scale factor (each extra render costs startup time).
     QIcon icon;
-    for (qreal dpr : {1.0, 1.25, 1.5, 2.0}) {
+    const qreal screenDpr = qApp->devicePixelRatio();
+    QVector<qreal> dprs{1.0};
+    if (screenDpr > 1.0)
+        dprs.append(screenDpr);
+    for (qreal dpr : dprs) {
         QPixmap pm = renderSvg(resource, color, qRound(size * dpr));
         if (pm.isNull())
             return {};

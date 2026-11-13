@@ -63,11 +63,11 @@ const char kDefaultSketch[] =
 MainWindow::MainWindow(const QString &sketchPath, QWidget *parent)
     : QMainWindow(parent)
 {
-    // Palette + stylesheet before any child widget exists (cheaper than re-polishing).
+    // Palette before any child widget exists. The stylesheet is applied per
+    // widget in applyTheme() (not app-wide: that costs ~75 ms of startup on the Pi).
     m_theme = QSettings().value(QStringLiteral("view/theme")).toString() == QLatin1String("light")
                   ? Theme::Mode::Light : Theme::Mode::Dark;
     qApp->setPalette(Theme::palette(m_theme));
-    qApp->setStyleSheet(Theme::styleSheet(m_theme));
 
     setupMenus();
     setupToolbar();
@@ -81,13 +81,15 @@ MainWindow::MainWindow(const QString &sketchPath, QWidget *parent)
     m_topSplitter->addWidget(m_editor);
 
     // Bottom: output/logs pane spanning the full width.
-    auto *vertical = new QSplitter(Qt::Vertical);
-    vertical->setChildrenCollapsible(false);
-    vertical->addWidget(m_topSplitter);
-    vertical->addWidget(createOutputPane());
-    vertical->setStretchFactor(0, 3);
-    vertical->setStretchFactor(1, 1);
-    setCentralWidget(vertical);
+    m_vSplitter = new QSplitter(Qt::Vertical);
+    m_vSplitter->setChildrenCollapsible(false);
+    m_vSplitter->setHandleWidth(3);
+    m_vSplitter->addWidget(m_topSplitter);
+    m_outputPane = createOutputPane();
+    m_vSplitter->addWidget(m_outputPane);
+    m_vSplitter->setStretchFactor(0, 3);
+    m_vSplitter->setStretchFactor(1, 1);
+    setCentralWidget(m_vSplitter);
 
     applyTheme(m_theme);
     // Default size, but never larger than 90% of the screen (the Pi is 1280x720).
@@ -119,7 +121,7 @@ MainWindow::~MainWindow()
 
 void MainWindow::setupToolbar()
 {
-    QToolBar *toolbar = addToolBar(tr("Main"));
+    QToolBar *toolbar = m_toolbar = addToolBar(tr("Main"));
     toolbar->setObjectName(QStringLiteral("mainToolbar"));
     toolbar->setMovable(false);
     toolbar->setContextMenuPolicy(Qt::PreventContextMenu);
@@ -667,16 +669,31 @@ void MainWindow::applyTheme(Theme::Mode mode)
     m_theme = mode;
     if (changed) {
         qApp->setPalette(Theme::palette(mode));
-        qApp->setStyleSheet(Theme::styleSheet(mode));
         QSettings().setValue(QStringLiteral("view/theme"),
                              mode == Theme::Mode::Light ? QStringLiteral("light") : QStringLiteral("dark"));
     }
     (mode == Theme::Mode::Light ? m_lightThemeAction : m_darkThemeAction)->setChecked(true);
 
+    // Stylesheet only on the widgets that need it, never on the editor.
+    const QString qss = Theme::styleSheet(mode);
+    for (QWidget *w : {static_cast<QWidget *>(m_toolbar), static_cast<QWidget *>(menuBar()), m_outputPane})
+        w->setStyleSheet(qss);
+
+    const Theme::Colors c = Theme::colors(mode);
+    // Splitter handles: plain colored strips (palette, not stylesheet).
+    for (QSplitter *s : {m_vSplitter, m_topSplitter}) {
+        for (int i = 1; i < s->count(); ++i) {
+            QSplitterHandle *h = s->handle(i);
+            QPalette pal = h->palette();
+            pal.setColor(QPalette::Window, c.border);
+            h->setPalette(pal);
+            h->setAutoFillBackground(true);
+        }
+    }
+
     Theme::applyToEditor(m_editor, m_lexer, mode, Theme::monoFont(kEditorPointSize));
     updateMarginWidth();
 
-    const Theme::Colors c = Theme::colors(mode);
     m_verifyAction->setIcon(Theme::svgIcon(QStringLiteral(":/icons/verify.svg"), c.onSecondary));
     m_uploadAction->setIcon(Theme::svgIcon(QStringLiteral(":/icons/upload.svg"), c.onPrimary));
 
