@@ -12,7 +12,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-find_package(Qt5 5.15 REQUIRED COMPONENTS Widgets Svg)   # Svg: themed toolbar icons
+find_package(Qt5 5.15 REQUIRED COMPONENTS Widgets Svg SerialPort)   # Svg: themed icons
 
 # ---- QScintilla (no CMake config shipped; locate it next to Qt) ----------
 get_filename_component(QT_LIB_DIR "${Qt5_DIR}/../.." ABSOLUTE)   # <prefix>/lib or /usr/lib/<arch>
@@ -45,6 +45,8 @@ add_executable(myide WIN32
     src/ArduinoLexer.h
     src/Theme.cpp
     src/Theme.h
+    src/SerialMonitor.cpp
+    src/SerialMonitor.h
     resources/resources.qrc
 )
 
@@ -52,6 +54,7 @@ target_include_directories(myide PRIVATE ${QSCINTILLA_INCLUDE_DIR})
 target_link_libraries(myide PRIVATE
     Qt5::Widgets
     Qt5::Svg
+    Qt5::SerialPort
     optimized ${QSCINTILLA_LIBRARY_RELEASE}
     debug     ${QSCINTILLA_LIBRARY_DEBUG}
 )

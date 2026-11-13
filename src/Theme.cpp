@@ -160,7 +160,7 @@ QString styleSheet(Mode mode)
 {
     const Colors c = colors(mode);
     // Flat, no shadows/animations. Tokens are replaced below. Applied to the
-    // toolbar, menu bar and output pane only (see MainWindow::applyTheme).
+    // toolbar, menu bar, output pane and Serial Monitor only (see MainWindow::applyTheme).
     QString qss = QStringLiteral(R"(
 QToolBar#mainToolbar {
     background: @window@;
@@ -208,14 +208,46 @@ QComboBox QAbstractItemView {
     outline: 0;
 }
 
-QLabel#outputHeader {
+QToolButton#serialButton {
+    background: transparent;
+    color: @text@;
+    border: 1px solid @border@;
+    border-radius: 6px;
+    padding: 5px 12px 5px 8px;
+}
+QToolButton#serialButton:hover { background: @hover@; }
+QToolButton#serialButton:checked { border-color: @primary@; background: @hover@; }
+
+QWidget#serialControls { background: @window@; }
+QLineEdit {
+    background: @editorBg@;
+    color: @text@;
+    border: 1px solid @border@;
+    border-radius: 6px;
+    padding: 5px 8px;
+    selection-background-color: @selection@;
+    selection-color: @text@;
+}
+QLineEdit:focus { border-color: @primary@; }
+QPushButton#sendButton {
+    background: @secondary@;
+    color: @onSecondary@;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 16px;
+    font-weight: 600;
+}
+QPushButton#sendButton:hover { background: @secondaryHover@; }
+QPushButton#sendButton:pressed { background: @secondaryPressed@; }
+
+QLabel#outputHeader, QLabel#panelHeader {
     background: @window@;
     color: @muted@;
     font-weight: 600;
     padding: 5px 12px;
     border-bottom: 1px solid @border@;
 }
-QPlainTextEdit#output {
+QPlainTextEdit#output, QPlainTextEdit#serialView {
     background: @editorBg@;
     color: @text@;
     border: none;

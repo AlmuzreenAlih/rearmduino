@@ -18,6 +18,7 @@ class QToolBar;
 class QsciScintilla;
 class ArduinoLexer;
 class PortComboBox;
+class SerialMonitor;
 
 class MainWindow : public QMainWindow
 {
@@ -37,8 +38,11 @@ private slots:
     void onProcessFinished(int exitCode, QProcess::ExitStatus status);
     void onProcessError(QProcess::ProcessError error);
     void updateMarginWidth();
+    void toggleSerialMonitor(bool show);
 
 private:
+    void reopenSerialAfterUpload();
+    void themeSplitterHandles();
     void setupEditor();
     void setupToolbar();
     void setupMenus();
@@ -78,6 +82,9 @@ private:
     QWidget *m_outputPane = nullptr;
     QAction *m_verifyAction = nullptr;
     QAction *m_uploadAction = nullptr;
+    QAction *m_serialAction = nullptr;
+    SerialMonitor *m_serial = nullptr;     // created on first open
+    bool m_reopenSerialAfterUpload = false;
     QAction *m_darkThemeAction = nullptr;
     QAction *m_lightThemeAction = nullptr;
     QComboBox *m_boardCombo = nullptr;

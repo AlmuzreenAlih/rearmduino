@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "ArduinoLexer.h"
 #include "PortComboBox.h"
+#include "SerialMonitor.h"
 
 #include <Qsci/qsciscintilla.h>
 
@@ -25,6 +26,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QScrollBar>
 #include <QSettings>
@@ -186,10 +188,25 @@ void MainWindow::setupToolbar()
     connect(m_portCombo, &PortComboBox::popupAboutToShow, this, &MainWindow::scanPorts);
     connect(m_portCombo, QOverload<int>::of(&QComboBox::activated), this, &MainWindow::onPortActivated);
     connect(m_portCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
-        if (index >= 0)
-            QSettings().setValue(QStringLiteral("port/address"), currentPort());
+        if (index < 0)
+            return;
+        QSettings().setValue(QStringLiteral("port/address"), currentPort());
+        if (m_serial)
+            m_serial->setPortName(currentPort());   // follows the toolbar; reopens if open
     });
     toolbar->addWidget(m_portCombo);
+
+    // Serial Monitor toggle, pushed to the right end.
+    auto *spacer = new QWidget;
+    spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    toolbar->addWidget(spacer);
+    m_serialAction = toolbar->addAction(tr("Serial"));
+    m_serialAction->setCheckable(true);
+    m_serialAction->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_M));
+    m_serialAction->setToolTip(tr("Show/hide the Serial Monitor (Ctrl+Shift+M)"));
+    toolbar->widgetForAction(m_serialAction)->setObjectName(QStringLiteral("serialButton"));
+    toolbar->widgetForAction(m_serialAction)->setFocusPolicy(Qt::NoFocus);
+    connect(m_serialAction, &QAction::toggled, this, &MainWindow::toggleSerialMonitor);
 }
 
 void MainWindow::setupMenus()
@@ -360,8 +377,13 @@ void MainWindow::startUpload()
         setBusy(false);
         return;
     }
-    // TODO(serial monitor): close the port here if the monitor has it open and
-    // reopen it in onProcessFinished(), otherwise the upload fails with "port busy".
+    // Free the port for the upload ("port busy" otherwise, especially on Windows);
+    // reopened in reopenSerialAfterUpload() when the task ends.
+    if (m_serial && m_serial->isOpen()) {
+        appendLog(tr("Serial Monitor: closing %1 for upload.").arg(m_serial->portName()), Theme::LogKind::Command);
+        m_serial->closePort();
+        m_reopenSerialAfterUpload = true;
+    }
     startTask(tr("Upload"), {QStringLiteral("compile"), QStringLiteral("--upload"),
                              QStringLiteral("--fqbn"), currentFqbn(),
                              QStringLiteral("--port"), currentPort(), m_sketchDir});
@@ -428,6 +450,7 @@ void MainWindow::onProcessFinished(int exitCode, QProcess::ExitStatus status)
     else
         appendLog(tr("%1 failed (exit code %2).").arg(m_taskName).arg(exitCode), Theme::LogKind::Error);
     setBusy(false);
+    reopenSerialAfterUpload();
 }
 
 void MainWindow::onProcessError(QProcess::ProcessError error)
@@ -435,6 +458,56 @@ void MainWindow::onProcessError(QProcess::ProcessError error)
     if (error == QProcess::FailedToStart) {
         appendLog(tr("Error: could not start arduino-cli: %1").arg(m_process->errorString()));
         setBusy(false);
+        reopenSerialAfterUpload();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Serial Monitor
+// ---------------------------------------------------------------------------
+
+void MainWindow::toggleSerialMonitor(bool show)
+{
+    if (show && !m_serial) {
+        // Created lazily on first open (CLAUDE.md startup rule).
+        m_serial = new SerialMonitor;
+        connect(m_serial, &SerialMonitor::sent, this, [this](const QString &text) {
+            appendLog(QStringLiteral("Sent: ") + text, Theme::LogKind::Sent);
+        });
+        connect(m_serial, &SerialMonitor::message, this, [this](const QString &text, bool isError) {
+            appendLog(text, isError ? Theme::LogKind::Error : Theme::LogKind::Command);
+        });
+        m_serial->setStyleSheet(Theme::styleSheet(m_theme));
+        const int total = m_topSplitter->width();
+        m_topSplitter->addWidget(m_serial);
+        m_topSplitter->setStretchFactor(0, 3);
+        m_topSplitter->setStretchFactor(1, 2);
+        m_topSplitter->setSizes({total * 62 / 100, total * 38 / 100});
+        themeSplitterHandles();
+    }
+    if (!m_serial)
+        return;
+
+    if (show) {
+        m_serial->show();
+        m_serial->setPortName(currentPort());
+        m_serial->openPort();
+        m_serial->findChild<QLineEdit *>()->setFocus();
+    } else {
+        m_serial->closePort();
+        m_serial->hide();   // editor takes the full width
+        m_reopenSerialAfterUpload = false;
+    }
+}
+
+void MainWindow::reopenSerialAfterUpload()
+{
+    if (!m_reopenSerialAfterUpload)
+        return;
+    m_reopenSerialAfterUpload = false;
+    if (m_serial && m_serial->isVisible()) {
+        m_serial->setPortName(currentPort());
+        m_serial->reopenWithRetry();
     }
 }
 
@@ -670,6 +743,21 @@ void MainWindow::updateMarginWidth()
     m_editor->setMarginWidth(0, QString(digits + 1, QLatin1Char('0')));
 }
 
+// Splitter handles: plain colored strips (palette, not stylesheet).
+void MainWindow::themeSplitterHandles()
+{
+    const QColor border = Theme::colors(m_theme).border;
+    for (QSplitter *s : {m_vSplitter, m_topSplitter}) {
+        for (int i = 1; i < s->count(); ++i) {
+            QSplitterHandle *h = s->handle(i);
+            QPalette pal = h->palette();
+            pal.setColor(QPalette::Window, border);
+            h->setPalette(pal);
+            h->setAutoFillBackground(true);
+        }
+    }
+}
+
 void MainWindow::applyTheme(Theme::Mode mode)
 {
     const bool changed = mode != m_theme;
@@ -685,21 +773,14 @@ void MainWindow::applyTheme(Theme::Mode mode)
     const QString qss = Theme::styleSheet(mode);
     for (QWidget *w : {static_cast<QWidget *>(m_toolbar), static_cast<QWidget *>(menuBar()), m_outputPane})
         w->setStyleSheet(qss);
+    if (m_serial)
+        m_serial->setStyleSheet(qss);
+    themeSplitterHandles();
 
     const Theme::Colors c = Theme::colors(mode);
-    // Splitter handles: plain colored strips (palette, not stylesheet).
-    for (QSplitter *s : {m_vSplitter, m_topSplitter}) {
-        for (int i = 1; i < s->count(); ++i) {
-            QSplitterHandle *h = s->handle(i);
-            QPalette pal = h->palette();
-            pal.setColor(QPalette::Window, c.border);
-            h->setPalette(pal);
-            h->setAutoFillBackground(true);
-        }
-    }
-
     Theme::applyToEditor(m_editor, m_lexer, mode, Theme::monoFont(kEditorPointSize));
     updateMarginWidth();
+    m_serialAction->setIcon(Theme::svgIcon(QStringLiteral(":/icons/serial.svg"), c.text));
 
     m_verifyAction->setIcon(Theme::svgIcon(QStringLiteral(":/icons/verify.svg"), c.onSecondary));
     m_uploadAction->setIcon(Theme::svgIcon(QStringLiteral(":/icons/upload.svg"), c.onPrimary));
