@@ -174,8 +174,8 @@ QToolBar#mainToolbar QLabel { color: @muted@; padding-left: 6px; }
 QToolButton#verifyButton, QToolButton#uploadButton {
     border: none;
     border-radius: 6px;
-    padding: 6px 14px 6px 10px;
-    margin-right: 6px;
+    padding: 6px 12px 6px 8px;
+    margin-right: 4px;
     font-weight: 600;
 }
 QToolButton#verifyButton { background: @secondary@; color: @onSecondary@; }

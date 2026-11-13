@@ -158,8 +158,9 @@ void MainWindow::setupToolbar()
     toolbar->addWidget(boardLabel);
     m_boardCombo = new QComboBox;
     m_boardCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    // Narrow enough that the whole toolbar fits ~800 px; the popup still widens to fit names.
-    m_boardCombo->setMinimumContentsLength(20);
+    // Narrow enough that the whole toolbar (incl. Serial) fits ~850 px, as on the
+    // Pi; the popup still widens to fit long board names.
+    m_boardCombo->setMinimumContentsLength(16);
     m_boardCombo->setMaxVisibleItems(25);
     m_boardCombo->addItem(settings.value(QStringLiteral("board/name"), QString::fromLatin1(kDefaultBoardName)).toString(),
                           settings.value(QStringLiteral("board/fqbn"), QString::fromLatin1(kDefaultFqbn)).toString());
@@ -178,7 +179,7 @@ void MainWindow::setupToolbar()
     toolbar->addWidget(new QLabel(tr("Port")));
     m_portCombo = new PortComboBox;
     m_portCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    m_portCombo->setMinimumContentsLength(10);
+    m_portCombo->setMinimumContentsLength(8);
     m_portCombo->setToolTip(tr("Open to scan for connected boards"));
     const QString savedPort = settings.value(QStringLiteral("port/address")).toString();
     if (!savedPort.isEmpty()) {
