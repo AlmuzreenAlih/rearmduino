@@ -9,6 +9,7 @@
 #include <QAction>
 #include <QActionGroup>
 #include <QApplication>
+#include <QMenu>
 #include <QMenuBar>
 #include <QRegularExpression>
 #include <QScreen>
@@ -50,7 +51,6 @@ constexpr int FqbnRole = Qt::UserRole;            // board combo + port combo (m
 constexpr int PortAddressRole = Qt::UserRole + 1; // port combo
 constexpr int BoardNameRole = Qt::UserRole + 2;   // port combo (matched board)
 
-constexpr qreal kEditorPointSize = 11;
 constexpr qreal kOutputPointSize = 10;
 
 const char kDefaultSketch[] =
@@ -72,13 +72,15 @@ MainWindow::MainWindow(const QString &sketchPath, QWidget *parent)
                   ? Theme::Mode::Light : Theme::Mode::Dark;
     qApp->setPalette(Theme::palette(m_theme));
 
-    setupMenus();
+    loadPreferences();
     setupToolbar();
 
     // Top: horizontal splitter, editor on the left; the Serial Monitor will be
     // added lazily on the right later.
     m_editor = new QsciScintilla;
     setupEditor();
+    setupMenus();       // after the toolbar/editor: menus reuse their actions
+    applyShortcuts();   // defaults + Advanced Settings overrides
     m_topSplitter = new QSplitter(Qt::Horizontal);
     m_topSplitter->setChildrenCollapsible(false);
     m_topSplitter->addWidget(m_editor);
@@ -106,7 +108,12 @@ MainWindow::MainWindow(const QString &sketchPath, QWidget *parent)
     } else {
         resize(size);
     }
+    m_sketchIsTemp = sketchPath.isEmpty();
     resolveSketch(sketchPath);
+    if (!m_sketchIsTemp)
+        addRecent(m_sketchDir);
+    updateTitle();
+    connect(m_editor, &QsciScintilla::modificationChanged, this, &QWidget::setWindowModified);
     // Focus the editor once shown; otherwise activation focuses the first combo box
     // (amber focus ring at startup).
     QTimer::singleShot(0, m_editor, [this] { m_editor->setFocus(); });
@@ -137,16 +144,15 @@ void MainWindow::setupToolbar()
     toolbar->setIconSize(QSize(18, 18));
     toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
 
+    // Shortcuts are set by applyShortcuts() (tooltips get the key appended there).
     m_verifyAction = toolbar->addAction(tr("Verify"), this, &MainWindow::verify);
-    m_verifyAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_R));
-    m_verifyAction->setToolTip(tr("Verify: compile the sketch (Ctrl+R)"));
+    m_verifyAction->setToolTip(tr("Verify: compile the sketch"));
     toolbar->widgetForAction(m_verifyAction)->setObjectName(QStringLiteral("verifyButton"));
 
     m_uploadAction = toolbar->addAction(tr("Upload"), this, &MainWindow::upload);
-    m_uploadAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_U));
-    m_uploadAction->setToolTip(tr("Upload: compile and upload to the selected port (Ctrl+U)"));
+    m_uploadAction->setToolTip(tr("Upload: compile and upload to the selected port"));
     toolbar->widgetForAction(m_uploadAction)->setObjectName(QStringLiteral("uploadButton"));
-    // No focus on click; keyboard users have Ctrl+R / Ctrl+U. (Accessibility
+    // No focus on click; keyboard users have shortcuts. (Accessibility
     // "press" still focuses them: see setBusy().)
     for (QAction *a : {m_verifyAction, m_uploadAction})
         toolbar->widgetForAction(a)->setFocusPolicy(Qt::NoFocus);
@@ -201,27 +207,13 @@ void MainWindow::setupToolbar()
     auto *spacer = new QWidget;
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     toolbar->addWidget(spacer);
-    m_serialAction = toolbar->addAction(tr("Serial"));
+    m_serialAction = toolbar->addAction(tr("Serial Monitor"));
+    m_serialAction->setIconText(tr("Serial"));   // toolbar label; menus show the full text
     m_serialAction->setCheckable(true);
-    m_serialAction->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_M));
-    m_serialAction->setToolTip(tr("Show/hide the Serial Monitor (Ctrl+Shift+M)"));
+    m_serialAction->setToolTip(tr("Show/hide the Serial Monitor"));
     toolbar->widgetForAction(m_serialAction)->setObjectName(QStringLiteral("serialButton"));
     toolbar->widgetForAction(m_serialAction)->setFocusPolicy(Qt::NoFocus);
     connect(m_serialAction, &QAction::toggled, this, &MainWindow::toggleSerialMonitor);
-}
-
-void MainWindow::setupMenus()
-{
-    QMenu *view = menuBar()->addMenu(tr("&View"));
-    auto *group = new QActionGroup(this);
-    m_darkThemeAction = view->addAction(tr("Dark Theme"));
-    m_lightThemeAction = view->addAction(tr("Light Theme"));
-    for (QAction *a : {m_darkThemeAction, m_lightThemeAction}) {
-        a->setCheckable(true);
-        group->addAction(a);
-    }
-    connect(m_darkThemeAction, &QAction::triggered, this, [this] { applyTheme(Theme::Mode::Dark); });
-    connect(m_lightThemeAction, &QAction::triggered, this, [this] { applyTheme(Theme::Mode::Light); });
 }
 
 QWidget *MainWindow::createOutputPane()
@@ -262,7 +254,7 @@ void MainWindow::setupEditor()
     m_editor->setMarginSensitivity(1, false);
     connect(m_editor, &QsciScintilla::linesChanged, this, &MainWindow::updateMarginWidth);
     m_editor->setIndentationsUseTabs(false);
-    m_editor->setTabWidth(2);
+    m_editor->setTabWidth(m_tabWidth);
     m_editor->setAutoIndent(true);
     m_editor->setBraceMatching(QsciScintilla::SloppyBraceMatch);
     m_editor->setCaretLineVisible(true);
@@ -276,17 +268,19 @@ void MainWindow::setupEditor()
     m_editor->SendScintilla(QsciScintilla::SCI_SETSCROLLWIDTHTRACKING, 1);
 }
 
-// Accepts a sketch folder, an .ino file, or nothing (untitled temp sketch).
+// Accepts a sketch folder, an .ino/.pde file, or nothing (untitled temp sketch).
 void MainWindow::resolveSketch(const QString &path)
 {
-    if (!path.isEmpty()) {
-        QFileInfo info(path);
-        m_sketchDir = info.isDir() ? info.absoluteFilePath() : info.absolutePath();
+    const QFileInfo info(path);
+    if (!path.isEmpty() && info.isFile()) {
+        m_sketchDir = info.absolutePath();
+        m_sketchFile = info.absoluteFilePath();
     } else {
-        m_sketchDir = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
-                          .filePath(QStringLiteral("myide/sketch_untitled"));
+        m_sketchDir = !path.isEmpty() ? info.absoluteFilePath()
+                                      : QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+                                            .filePath(QStringLiteral("myide/sketch_untitled"));
+        m_sketchFile = QDir(m_sketchDir).filePath(QFileInfo(m_sketchDir).fileName() + QStringLiteral(".ino"));
     }
-    m_sketchFile = QDir(m_sketchDir).filePath(QFileInfo(m_sketchDir).fileName() + QStringLiteral(".ino"));
 
     QFile file(m_sketchFile);
     if (file.open(QIODevice::ReadOnly)) {
@@ -295,9 +289,10 @@ void MainWindow::resolveSketch(const QString &path)
         m_editor->setText(QString::fromLatin1(kDefaultSketch));
     }
     m_editor->setModified(false);
-    setWindowTitle(QStringLiteral("%1 - myide").arg(QFileInfo(m_sketchFile).fileName()));
 }
 
+// Writes the editor to the sketch file (Verify/Upload do this too). Untitled /
+// example sketches stay "modified" so closing still asks to Save As.
 bool MainWindow::saveSketch()
 {
     if (!QDir().mkpath(m_sketchDir)) {
@@ -310,12 +305,24 @@ bool MainWindow::saveSketch()
         return false;
     }
     file.write(m_editor->text().toUtf8());
-    m_editor->setModified(false);
+    if (!m_sketchIsTemp)
+        m_editor->setModified(false);
     return true;
 }
 
+// Advanced Settings path if set and executable, otherwise PATH.
 QString MainWindow::cliPath()
 {
+    if (m_cliPath.isEmpty()) {
+        const QString custom = QSettings().value(QStringLiteral("advanced/cliPath")).toString();
+        if (!custom.isEmpty()) {
+            if (QFileInfo(custom).isExecutable())
+                m_cliPath = custom;
+            else
+                appendLog(tr("Warning: arduino-cli path in Advanced Settings is not executable: %1. Using PATH.")
+                              .arg(QDir::toNativeSeparators(custom)));
+        }
+    }
     if (m_cliPath.isEmpty())
         m_cliPath = QStandardPaths::findExecutable(QStringLiteral("arduino-cli"));
     if (m_cliPath.isEmpty())
@@ -348,7 +355,8 @@ void MainWindow::verify()
     }
     if (!saveSketch())
         return;
-    startTask(tr("Verify"), {QStringLiteral("compile"), QStringLiteral("--fqbn"), currentFqbn(), m_sketchDir});
+    startTask(tr("Verify"), QStringList{QStringLiteral("compile"), QStringLiteral("--fqbn"), currentFqbn()}
+                                << compileOptions() << m_sketchDir);
 }
 
 void MainWindow::upload()
@@ -385,9 +393,10 @@ void MainWindow::startUpload()
         m_serial->closePort();
         m_reopenSerialAfterUpload = true;
     }
-    startTask(tr("Upload"), {QStringLiteral("compile"), QStringLiteral("--upload"),
-                             QStringLiteral("--fqbn"), currentFqbn(),
-                             QStringLiteral("--port"), currentPort(), m_sketchDir});
+    startTask(tr("Upload"), QStringList{QStringLiteral("compile"), QStringLiteral("--upload"),
+                                        QStringLiteral("--fqbn"), currentFqbn(),
+                                        QStringLiteral("--port"), currentPort()}
+                                << compileOptions() << m_sketchDir);
 }
 
 void MainWindow::startTask(const QString &name, const QStringList &args)
@@ -583,6 +592,10 @@ void MainWindow::onBoardsLoaded(const QJsonObject &json)
         const QString version = platform.value(QStringLiteral("installed_version")).toString();
         const QJsonObject release = platform.value(QStringLiteral("releases")).toObject()
                                         .value(version).toObject();
+        // For Tools > Board submenus: "arduino:avr" -> "Arduino AVR Boards".
+        const QString platformName = release.value(QStringLiteral("name")).toString();
+        if (!platformName.isEmpty())
+            m_platformNames.insert(platform.value(QStringLiteral("id")).toString(), platformName);
         for (const QJsonValue &bv : release.value(QStringLiteral("boards")).toArray()) {
             const QJsonObject b = bv.toObject();
             const QString fqbn = b.value(QStringLiteral("fqbn")).toString();
@@ -645,6 +658,8 @@ void MainWindow::scanPorts()
         [this](const QJsonObject &json) { onPortsScanned(json); },
         [this] {
             m_portsProcess = nullptr;
+            if (m_portMenu && m_portMenu->isVisible())
+                populatePortMenu();   // Tools > Port is open: show the fresh list
             if (m_uploadAfterScan) {
                 m_uploadAfterScan = false;
                 if (currentPort().isEmpty()) {
@@ -779,7 +794,7 @@ void MainWindow::applyTheme(Theme::Mode mode)
     themeSplitterHandles();
 
     const Theme::Colors c = Theme::colors(mode);
-    Theme::applyToEditor(m_editor, m_lexer, mode, Theme::monoFont(kEditorPointSize));
+    Theme::applyToEditor(m_editor, m_lexer, mode, Theme::monoFont(m_editorPointSize));
     updateMarginWidth();
     m_serialAction->setIcon(Theme::svgIcon(QStringLiteral(":/icons/serial.svg"), c.text));
 

@@ -278,6 +278,7 @@ QMenuBar::item:selected { background: @hover@; }
 QMenu { background: @window@; color: @text@; border: 1px solid @border@; padding: 4px; }
 QMenu::item { padding: 5px 24px 5px 24px; border-radius: 4px; }
 QMenu::item:selected { background: @hover@; }
+QMenu::item:disabled { color: @muted@; background: transparent; }
 
 QToolTip { background: @tooltipBg@; color: @tooltipText@; border: 1px solid @border@; padding: 4px 6px; }
 )");

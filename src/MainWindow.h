@@ -2,6 +2,8 @@
 
 #include "Theme.h"
 
+#include <QHash>
+#include <QList>
 #include <QMainWindow>
 #include <QProcess>
 #include <QString>
@@ -11,6 +13,7 @@
 class QAction;
 class QComboBox;
 class QJsonObject;
+class QMenu;
 class QPlainTextEdit;
 class QSplitter;
 class QTextDecoder;
@@ -28,6 +31,9 @@ public:
     explicit MainWindow(const QString &sketchPath, QWidget *parent = nullptr);
     ~MainWindow() override;
 
+protected:
+    void closeEvent(QCloseEvent *event) override;
+
 private slots:
     void verify();
     void upload();
@@ -40,21 +46,60 @@ private slots:
     void updateMarginWidth();
     void toggleSerialMonitor(bool show);
 
+    // File menu (MainWindowMenus.cpp)
+    void newSketch();
+    void openSketch();
+    bool save();
+    bool saveAs();
+    void showPreferences();
+    void showAdvancedSettings(int tab = 0);
+
 private:
-    void reopenSerialAfterUpload();
-    void themeSplitterHandles();
     void setupEditor();
     void setupToolbar();
-    void setupMenus();
     QWidget *createOutputPane();
+
+    // Menus (MainWindowMenus.cpp)
+    void setupMenus();
+    QAction *registerAction(QAction *action, const char *id, const QKeySequence &defaultKey);
+    void applyShortcuts();
+    void populateRecentMenu();
+    void populateExamplesMenu();
+    void loadExamples();
+    void onExamplesLoaded(const QJsonObject &json);
+    void populateBoardMenu();
+    void populatePortMenu();
+    void editCommand(int op);
+    void toggleComment();
+    void find();
+    void findNext(bool forward);
+    void goToLine();
+    void showSketchFolder();
+    void showAbout();
+
+    // Sketch files (MainWindowMenus.cpp)
+    bool maybeSave();
+    void openSketchPath(const QString &path, bool isTemp);
+    void openExample(const QString &exampleDir);
+    void addRecent(const QString &sketchDir);
+    void updateTitle();
+    QString sketchbookDir() const;
+
+    // Preferences
+    void loadPreferences();
+    void applyEditorPreferences();
+
     void resolveSketch(const QString &path);
     bool saveSketch();
 
     void applyTheme(Theme::Mode mode);
     void recolorOutput();
+    void reopenSerialAfterUpload();
+    void themeSplitterHandles();
 
     QString cliPath();
     void startTask(const QString &name, const QStringList &args);
+    QStringList compileOptions() const;
     QProcess *startCliJson(const QStringList &args,
                            std::function<void(const QJsonObject &)> onSuccess,
                            std::function<void()> onDone);
@@ -76,7 +121,7 @@ private:
     QsciScintilla *m_editor = nullptr;
     ArduinoLexer *m_lexer = nullptr;
     QPlainTextEdit *m_output = nullptr;
-    QSplitter *m_topSplitter = nullptr;   // editor | (future) serial monitor
+    QSplitter *m_topSplitter = nullptr;   // editor | serial monitor
     QSplitter *m_vSplitter = nullptr;     // top area / output pane
     QToolBar *m_toolbar = nullptr;
     QWidget *m_outputPane = nullptr;
@@ -90,6 +135,18 @@ private:
     QComboBox *m_boardCombo = nullptr;
     PortComboBox *m_portCombo = nullptr;
 
+    // Menus filled when opened.
+    QMenu *m_recentMenu = nullptr;
+    QMenu *m_examplesMenu = nullptr;
+    QMenu *m_boardMenu = nullptr;
+    QMenu *m_portMenu = nullptr;
+    QList<QAction *> m_shortcutActions;     // everything shown in Keyboard Shortcuts
+    QHash<QString, QString> m_platformNames; // "arduino:avr" -> "Arduino AVR Boards"
+
+    // Examples (loaded on first open of File > Examples, per board).
+    QProcess *m_examplesProcess = nullptr;
+    QString m_examplesFqbn;   // board the Examples menu was filled for
+
     // Verify/Upload process (output streamed to the log pane).
     QProcess *m_process = nullptr;
     QTextDecoder *m_decoder = nullptr;
@@ -101,7 +158,15 @@ private:
     QProcess *m_portsProcess = nullptr;
     bool m_uploadAfterScan = false;
 
+    // Preferences
+    qreal m_editorPointSize = 11;
+    int m_tabWidth = 2;
+    bool m_verbose = false;
+    QString m_warnings = QStringLiteral("default");
+
+    QString m_findText;
     QString m_cliPath;
     QString m_sketchDir;   // folder passed to arduino-cli
     QString m_sketchFile;  // <dir>/<dirname>.ino
+    bool m_sketchIsTemp = false;   // untitled or example copy: Save goes to Save As
 };

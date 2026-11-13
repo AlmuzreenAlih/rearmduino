@@ -102,6 +102,15 @@ Dark theme (default):
 
 Light theme: white background, Navy text, same Amber and Sky Blue accents. Use Amber only
 for fills and borders there, never for text (poor contrast on white).
+- Window/toolbar/panels: White mixed with 12% Slate. Borders: White + 45% Slate.
+  Secondary text and line numbers: Slate + 45% Navy.
+- Editor: White background, Navy text, current line White + 7% Sky Blue,
+  selection White + 30% Sky Blue.
+- C++ lexer: keywords Sky Blue + 35% Navy, types/preprocessor/numbers dark amber `#8A5A00`,
+  strings `#2E7D32`, comments Slate + 35% Navy, italic.
+- Output pane: errors `#C62828`, warnings `#8A5A00`, success `#2E7D32`, `Sent:` lines as keywords.
+- Buttons: same as dark (Upload Amber fill + Navy text, Verify Sky Blue fill + white text).
+- "X + N% Y" means a mix of the two palette colors; `src/Theme.cpp` (`mix()`) is the source of truth.
 
 ## Startup-speed rules
 

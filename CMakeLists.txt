@@ -41,6 +41,9 @@ add_executable(myide WIN32
     src/main.cpp
     src/MainWindow.cpp
     src/MainWindow.h
+    src/MainWindowMenus.cpp
+    src/SettingsDialogs.cpp
+    src/SettingsDialogs.h
     src/PortComboBox.h
     src/ArduinoLexer.h
     src/BoardComboBox.cpp
@@ -53,6 +56,7 @@ add_executable(myide WIN32
 )
 
 target_include_directories(myide PRIVATE ${QSCINTILLA_INCLUDE_DIR})
+target_compile_definitions(myide PRIVATE MYIDE_VERSION="${PROJECT_VERSION}")
 target_link_libraries(myide PRIVATE
     Qt5::Widgets
     Qt5::Svg
@@ -62,6 +66,9 @@ target_link_libraries(myide PRIVATE
 )
 if(WIN32)
     target_compile_definitions(myide PRIVATE QSCINTILLA_DLL)  # dllimport QScintilla symbols
+endif()
+if(MSVC)
+    target_compile_options(myide PRIVATE /utf-8)   # sources are UTF-8 (default is the ANSI code page)
 endif()
 
 # ---- Windows: make the build folder runnable (`cmake --build build --target deploy`)
