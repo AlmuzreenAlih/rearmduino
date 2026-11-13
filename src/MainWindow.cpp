@@ -37,6 +37,19 @@ constexpr int FqbnRole = Qt::UserRole;            // board combo + port combo (m
 constexpr int PortAddressRole = Qt::UserRole + 1; // port combo
 constexpr int BoardNameRole = Qt::UserRole + 2;   // port combo (matched board)
 
+// Monospace font for the editor and output pane. Windows' "system fixed font"
+// is Courier New, so use Consolas there; elsewhere use the desktop's monospace font.
+QFont monoFont()
+{
+#ifdef Q_OS_WIN
+    QFont font(QStringLiteral("Consolas"), 10);
+    font.setStyleHint(QFont::Monospace);
+    return font;
+#else
+    return QFontDatabase::systemFont(QFontDatabase::FixedFont);
+#endif
+}
+
 const char kDefaultSketch[] =
     "void setup() {\n"
     "  // put your setup code here, to run once:\n"
@@ -63,7 +76,7 @@ MainWindow::MainWindow(const QString &sketchPath, QWidget *parent)
     m_output = new QPlainTextEdit;
     m_output->setReadOnly(true);
     m_output->setMaximumBlockCount(10000);
-    m_output->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    m_output->setFont(monoFont());
     m_output->setLineWrapMode(QPlainTextEdit::NoWrap);
 
     auto *vertical = new QSplitter(Qt::Vertical);
@@ -151,7 +164,7 @@ void MainWindow::setupToolbar()
 
 void MainWindow::setupEditor()
 {
-    const QFont font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    const QFont font = monoFont();
 
     auto *lexer = new QsciLexerCPP(m_editor);
     lexer->setDefaultFont(font);
@@ -168,6 +181,12 @@ void MainWindow::setupEditor()
     m_editor->setAutoIndent(true);
     m_editor->setBraceMatching(QsciScintilla::SloppyBraceMatch);
     m_editor->setCaretLineVisible(true);
+
+    // Scintilla reserves a fixed 2000 px scroll width by default, so the
+    // horizontal scrollbar always shows. Start small and grow with the longest
+    // line instead. (Raw messages: works on every QScintilla version.)
+    m_editor->SendScintilla(QsciScintilla::SCI_SETSCROLLWIDTH, 1);
+    m_editor->SendScintilla(QsciScintilla::SCI_SETSCROLLWIDTHTRACKING, 1);
 }
 
 // Accepts a sketch folder, an .ino file, or nothing (untitled temp sketch).
