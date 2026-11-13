@@ -359,12 +359,21 @@ void MainWindow::resolveSketch(const QString &path)
             files << file;
     }
 
+    // No <folder>.ino yet: new sketch -> template. But if the folder already has
+    // other .ino files, start it empty (they may define setup()/loop(); a
+    // template would clash with them).
+    const bool mainExists = QFileInfo::exists(m_sketchFile);
+    if (!mainExists && files.size() > 1)
+        appendLog(tr("Note: %1 has no %2; created it empty (arduino-cli needs the main file to match the folder name).")
+                      .arg(QDir::toNativeSeparators(m_sketchDir), QFileInfo(m_sketchFile).fileName()),
+                  Theme::LogKind::Warning);
+
     for (const QString &file : files) {
         QsciScintilla *editor = createEditor(file);
         QFile f(file);
         if (f.open(QIODevice::ReadOnly))
             editor->setText(QString::fromUtf8(f.readAll()));
-        else if (file == m_sketchFile)
+        else if (file == m_sketchFile && files.size() == 1)
             editor->setText(QString::fromLatin1(kDefaultSketch));
         editor->setModified(false);
         m_tabs->addTab(editor, QString());
@@ -518,7 +527,10 @@ void MainWindow::startTask(const QString &name, const QStringList &args)
 
 void MainWindow::onProcessOutput()
 {
+    // arduino-cli 1.5.1 (Pi) colors some lines with ANSI escapes; 1.4.1 doesn't.
+    static const QRegularExpression ansi(QStringLiteral("\x1b\\[[0-9;]*[A-Za-z]"));
     m_partialLine += m_decoder->toUnicode(m_process->readAll());
+    m_partialLine.remove(ansi);   // on the joined buffer: an escape may span two reads
     int start = 0;
     int nl;
     while ((nl = m_partialLine.indexOf(QLatin1Char('\n'), start)) != -1) {
