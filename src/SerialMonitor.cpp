@@ -229,6 +229,16 @@ void SerialMonitor::send()
     emit sent(text);
 }
 
+// Raw write for Manual Control (no line ending). Returns an error text, or empty.
+QString SerialMonitor::writeRaw(const QByteArray &data)
+{
+    if (!isOpen())
+        return tr("%1 is not open").arg(m_portName.isEmpty() ? tr("the port") : m_portName);
+    if (m_port->write(data) != data.size())
+        return tr("write failed: %1").arg(m_port->errorString());
+    return {};
+}
+
 void SerialMonitor::onReadyRead()
 {
     if (!m_port->isOpen() || !m_decoder)

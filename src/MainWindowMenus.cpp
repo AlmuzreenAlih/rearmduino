@@ -4,6 +4,7 @@
 
 #include "MainWindow.h"
 #include "ArduinoLexer.h"
+#include "ManualControl.h"
 #include "PortComboBox.h"
 #include "SettingsDialogs.h"
 
@@ -757,6 +758,8 @@ bool MainWindow::saveAs()
     m_sketchDir = newDir;
     m_sketchFile = newMain;
     m_sketchIsTemp = false;
+    if (m_manual)
+        m_manual->setSketchDir(m_sketchDir);   // its JSON file was copied above
     if (!saveSketch())
         return false;
     for (QsciScintilla *editor : editors())

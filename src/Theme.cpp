@@ -179,6 +179,7 @@ QString replaceTokens(QString qss, const Colors &c)
         {"@muted@", c.textMuted},
         {"@border@", c.border},
         {"@hover@", c.hover},
+        {"@error@", c.error},
         {"@selection@", c.selection},
         {"@primary@", c.primary},
         {"@primaryHover@", c.primary.lighter(110)},
@@ -329,7 +330,51 @@ QLabel#outputHeader, QLabel#panelHeader {
     padding: 5px 12px;
     border-bottom: 1px solid @border@;
 }
-QPlainTextEdit#output, QPlainTextEdit#serialView {
+QWidget#outputHeaderRow { background: @window@; border-bottom: 1px solid @border@; }
+QTabBar#outputTabs { background: @window@; }
+QTabBar#outputTabs::tab {
+    background: @window@;
+    color: @muted@;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 5px 14px;
+}
+QTabBar#outputTabs::tab:hover:!selected { color: @text@; }
+QTabBar#outputTabs::tab:selected { color: @text@; border-bottom: 2px solid @primary@; }
+
+QWidget#manualControl, QWidget#manualList { background: @editorBg@; }
+QWidget#manualSeparator { background: @border@; }
+QScrollArea#manualScroll { background: transparent; border: none; }
+QLabel#manualTitle { color: @muted@; font-weight: 600; }
+QLabel#manualEmpty { color: @muted@; padding: 4px 2px; }
+QLabel#manualStatus { color: @muted@; }
+QLabel#manualStatus[error="true"] { color: @error@; }
+QToolButton#manualAdd {
+    background: transparent;
+    color: @text@;
+    border: 1px solid @border@;
+    border-radius: 6px;
+    padding: 3px 10px;
+}
+QToolButton#manualAdd:hover { background: @hover@; }
+QToolButton#manualAdd:disabled { color: @muted@; }
+QPushButton#relayButton, QPushButton#functionButton {
+    background: @window@;
+    color: @text@;
+    border: 1px solid @border@;
+    border-radius: 6px;
+    padding: 7px 12px;
+    text-align: left;
+}
+QPushButton#relayButton:hover, QPushButton#functionButton:hover { border-color: @muted@; }
+QPushButton#relayButton:focus, QPushButton#functionButton:focus { border-color: @secondary@; }
+QPushButton#relayButton:pressed, QPushButton#relayButton:checked {
+    background: @primary@; color: @onPrimary@; border-color: @primary@;
+}
+QPushButton#functionButton:pressed { background: @secondary@; color: @onSecondary@; border-color: @secondary@; }
+QDialog#manualDialog QLabel#manualNote { color: @muted@; }
+
+QPlainTextEdit#output, QPlainTextEdit#serialView, QPlainTextEdit#manualJson {
     background: @editorBg@;
     color: @text@;
     border: none;

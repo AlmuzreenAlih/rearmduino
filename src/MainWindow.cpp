@@ -2,6 +2,7 @@
 #include "ArduinoLexer.h"
 #include "BoardComboBox.h"
 #include "PortComboBox.h"
+#include "ManualControl.h"
 #include "SerialMonitor.h"
 
 #include <Qsci/qsciscintilla.h>
@@ -32,7 +33,9 @@
 #include <QPlainTextEdit>
 #include <QScrollBar>
 #include <QSettings>
+#include <QHBoxLayout>
 #include <QSplitter>
+#include <QStackedWidget>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QTextCodec>
@@ -233,9 +236,32 @@ QWidget *MainWindow::createOutputPane()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    auto *header = new QLabel(tr("Output"));
-    header->setObjectName(QStringLiteral("outputHeader"));
+    // Tabs: Output | Manual Control (the latter created on first use).
+    auto *header = new QWidget;
+    header->setObjectName(QStringLiteral("outputHeaderRow"));
+    header->setAttribute(Qt::WA_StyledBackground);
+    auto *headerLayout = new QHBoxLayout(header);
+    headerLayout->setContentsMargins(4, 0, 4, 0);
+    m_bottomTabs = new QTabBar;
+    m_bottomTabs->setObjectName(QStringLiteral("outputTabs"));
+    m_bottomTabs->setDrawBase(false);
+    m_bottomTabs->setExpanding(false);
+    m_bottomTabs->setFocusPolicy(Qt::NoFocus);
+    // Bold via the widget font, not QSS: tab sizes ignore a QSS font-weight
+    // (the labels would be clipped).
+    QFont tabFont = m_bottomTabs->font();
+    tabFont.setWeight(QFont::DemiBold);
+    m_bottomTabs->setFont(tabFont);
+    m_bottomTabs->addTab(tr("Output"));
+    m_bottomTabs->addTab(tr("Manual Control"));
+    m_bottomTabs->setTabToolTip(1, tr("Buttons that send to the serial port (saved in the sketch folder)"));
+    headerLayout->addWidget(m_bottomTabs);
+    headerLayout->addStretch(1);
     layout->addWidget(header);
+
+    m_bottomStack = new QStackedWidget;
+    layout->addWidget(m_bottomStack, 1);
+    connect(m_bottomTabs, &QTabBar::currentChanged, this, &MainWindow::showBottomTab);
 
     m_output = new QPlainTextEdit;
     m_output->setObjectName(QStringLiteral("output"));
@@ -244,8 +270,65 @@ QWidget *MainWindow::createOutputPane()
     m_output->setFont(Theme::monoFont(kOutputPointSize));
     m_output->setLineWrapMode(QPlainTextEdit::NoWrap);
     m_output->setFrameShape(QFrame::NoFrame);
-    layout->addWidget(m_output);
+    m_bottomStack->addWidget(m_output);
     return pane;
+}
+
+void MainWindow::showBottomTab(int index)
+{
+    if (index != 1) {
+        m_bottomStack->setCurrentWidget(m_output);
+        return;
+    }
+    if (!m_manual) {
+        // Created lazily (startup rule); inherits the pane's stylesheet.
+        m_manual = new ManualControl([this](const QByteArray &data, const QString &label) {
+            return manualSend(data, label);
+        });
+        m_bottomStack->addWidget(m_manual);
+        m_manual->setSketchDir(m_sketchDir);
+    } else {
+        m_manual->reloadIfChanged();
+    }
+    m_bottomStack->setCurrentWidget(m_manual);
+    m_manual->setFocus();   // hotkeys active right away
+}
+
+// Manual Control buttons: write to the toolbar's port through the Serial Monitor,
+// opening it if needed (so the board's replies are visible).
+QString MainWindow::manualSend(const QByteArray &data, const QString &label)
+{
+    QString error;
+    if (m_process && m_process->state() != QProcess::NotRunning && m_taskName == tr("Upload"))
+        error = tr("upload in progress");
+    else if (currentPort().isEmpty())
+        error = tr("no port selected (choose one in the toolbar)");
+    if (error.isEmpty() && (!m_serial || !m_serial->isOpen())) {
+        // Opening the port resets most boards (DTR), and bytes that arrive while
+        // the bootloader runs can keep the sketch from starting. So this press
+        // only opens the port; the board's boot output shows in the monitor.
+        m_serialKeepFocus = true;   // don't move focus to the monitor's input (ends key holds)
+        if (!m_serialAction->isChecked())
+            m_serialAction->setChecked(true);
+        else if (m_serial)
+            m_serial->openPort();
+        m_serialKeepFocus = false;
+        if (m_serial && m_serial->isOpen()) {
+            const QString note = tr("opened %1; the board restarts when the port opens. Press again once it's ready")
+                                     .arg(currentPort());
+            appendLog(tr("Manual Control: %1.").arg(note), Theme::LogKind::Command);
+            return note;
+        }
+        error = tr("cannot open %1 (see Output)").arg(currentPort());
+    }
+    if (error.isEmpty())
+        error = m_serial->writeRaw(data);
+    if (!error.isEmpty()) {
+        appendLog(tr("Manual Control: not sent (%1): %2").arg(label, error), Theme::LogKind::Error);
+        return error;
+    }
+    appendLog(QStringLiteral("Sent: %1  (%2)").arg(QString::fromUtf8(data), label), Theme::LogKind::Sent);
+    return {};
 }
 
 // ---------------------------------------------------------------------------
@@ -402,6 +485,8 @@ void MainWindow::resolveSketch(const QString &path)
     }
     m_tabs->setCurrentIndex(0);
     m_editor = editors().value(0);
+    if (m_manual)
+        m_manual->setSketchDir(m_sketchDir);   // buttons belong to the sketch
 }
 
 // Writes every tab to its file (Verify/Upload do this too, since arduino-cli
@@ -468,6 +553,7 @@ void MainWindow::verify()
     if (m_process && m_process->state() != QProcess::NotRunning)
         return;
     m_output->clear();
+    m_bottomTabs->setCurrentIndex(0);   // show the build log
     if (currentFqbn().isEmpty()) {
         appendLog(tr("Error: no board selected."));
         return;
@@ -483,6 +569,7 @@ void MainWindow::upload()
     if (m_process && m_process->state() != QProcess::NotRunning)
         return;
     m_output->clear();
+    m_bottomTabs->setCurrentIndex(0);   // show the build log
     if (currentFqbn().isEmpty()) {
         appendLog(tr("Error: no board selected."));
         return;
@@ -625,7 +712,8 @@ void MainWindow::toggleSerialMonitor(bool show)
         m_serial->show();
         m_serial->setPortName(currentPort());
         m_serial->openPort();
-        m_serial->findChild<QLineEdit *>()->setFocus();
+        if (!m_serialKeepFocus)
+            m_serial->findChild<QLineEdit *>()->setFocus();
     } else {
         m_serial->closePort();
         m_serial->hide();   // editor takes the full width

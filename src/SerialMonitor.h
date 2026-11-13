@@ -35,6 +35,7 @@ public:
     // Reopen after an upload: the board resets/re-enumerates, so retry briefly.
     void reopenWithRetry(int attemptsLeft = 10);
     void setTheme(Theme::Mode mode);   // icon colors (the stylesheet is set by MainWindow)
+    QString writeRaw(const QByteArray &data);   // error text, empty on success
 
 signals:
     void sent(const QString &text);          // text as typed, without line ending
