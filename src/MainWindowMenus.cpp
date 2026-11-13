@@ -35,6 +35,7 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QRegularExpression>
+#include <QSet>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QStatusBar>
@@ -208,7 +209,7 @@ QAction *MainWindow::registerAction(QAction *action, const char *id, const QKeyS
 void MainWindow::applyShortcuts()
 {
     QSettings settings;
-    QsciCommandSet *commands = m_editor->standardCommands();
+    m_shortcutKeys.clear();
     for (QAction *a : m_shortcutActions) {
         const QString settingsKey = QStringLiteral("shortcuts/") + a->objectName();
         const QKeySequence k = settings.contains(settingsKey)
@@ -218,17 +219,23 @@ void MainWindow::applyShortcuts()
         const QString base = a->property("baseToolTip").toString();
         a->setToolTip(k.isEmpty() ? base : QStringLiteral("%1 (%2)").arg(base, k.toString(QKeySequence::NativeText)));
 
-        // QScintilla binds keys of its own (Ctrl+U lowercase, Ctrl+L cut line,
-        // Ctrl+/ word part, ...) and would swallow them before the menu shortcut.
-        if (!k.isEmpty()) {
-            const int qtKey = k[0];
-            for (QsciCommand *c : commands->commands()) {
-                if (c->key() == qtKey)
-                    c->setKey(0);
-                if (c->alternateKey() == qtKey)
-                    c->setAlternateKey(0);
-            }
-        }
+        if (!k.isEmpty())
+            m_shortcutKeys.insert(k[0]);
+    }
+    for (QsciScintilla *editor : editors())
+        clearEditorBindings(editor);
+}
+
+// QScintilla binds keys of its own (Ctrl+U lowercase, Ctrl+L cut line,
+// Ctrl+/ word part, ...) and would swallow them before the menu shortcut.
+// Called for every editor tab, including ones opened later.
+void MainWindow::clearEditorBindings(QsciScintilla *editor)
+{
+    for (QsciCommand *c : editor->standardCommands()->commands()) {
+        if (m_shortcutKeys.contains(c->key()))
+            c->setKey(0);
+        if (m_shortcutKeys.contains(c->alternateKey()))
+            c->setAlternateKey(0);
     }
 }
 
@@ -571,13 +578,13 @@ void MainWindow::updateTitle()
     if (m_sketchIsTemp)
         name += tr(" (not saved)");
     setWindowTitle(QStringLiteral("%1[*] - myide").arg(name));
-    setWindowModified(m_editor->isModified());
+    setWindowModified(anyModified());
 }
 
-// Returns false if the user cancelled.
+// Returns false if the user cancelled. Covers all tabs.
 bool MainWindow::maybeSave()
 {
-    if (!m_editor->isModified())
+    if (!anyModified())
         return true;
     const auto answer = QMessageBox::question(
         this, tr("Save changes?"),
@@ -724,10 +731,14 @@ bool MainWindow::saveAs()
         return false;
     }
 
-    // Carry the sketch's other files (extra tabs, headers, data) along.
+    // Carry the sketch's other files (headers, data, ...) along. Files open in
+    // tabs are written from the editors below instead.
+    QSet<QString> tabFiles;
+    for (const QsciScintilla *editor : editors())
+        tabFiles.insert(QFileInfo(editor->property("filePath").toString()).absoluteFilePath());
     const QDir oldDir(m_sketchDir);
     for (const QFileInfo &fi : oldDir.entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot)) {
-        if (fi.absoluteFilePath() == QFileInfo(m_sketchFile).absoluteFilePath())
+        if (tabFiles.contains(fi.absoluteFilePath()))
             continue;
         const QString dst = QDir(newDir).filePath(fi.fileName());
         if (fi.isDir())
@@ -736,11 +747,20 @@ bool MainWindow::saveAs()
             QFile::copy(fi.absoluteFilePath(), dst);
     }
 
+    // Main tab becomes <name>.ino; the other tabs keep their file names.
+    const QString newMain = QDir(newDir).filePath(name + QStringLiteral(".ino"));
+    for (QsciScintilla *editor : editors()) {
+        const QString old = editor->property("filePath").toString();
+        const bool isMain = QFileInfo(old).absoluteFilePath() == QFileInfo(m_sketchFile).absoluteFilePath();
+        editor->setProperty("filePath", isMain ? newMain : QDir(newDir).filePath(QFileInfo(old).fileName()));
+    }
     m_sketchDir = newDir;
-    m_sketchFile = QDir(newDir).filePath(name + QStringLiteral(".ino"));
+    m_sketchFile = newMain;
     m_sketchIsTemp = false;
     if (!saveSketch())
         return false;
+    for (QsciScintilla *editor : editors())
+        updateTabTitle(editor);
     addRecent(m_sketchDir);
     updateTitle();
     statusBar()->showMessage(tr("Saved %1").arg(QDir::toNativeSeparators(m_sketchFile)), 3000);
@@ -762,9 +782,12 @@ void MainWindow::loadPreferences()
 
 void MainWindow::applyEditorPreferences()
 {
-    m_editor->setTabWidth(m_tabWidth);
-    Theme::applyToEditor(m_editor, m_lexer, m_theme, Theme::monoFont(m_editorPointSize));
-    updateMarginWidth();
+    for (QsciScintilla *editor : editors()) {
+        editor->setTabWidth(m_tabWidth);
+        Theme::applyToEditor(editor, static_cast<QsciLexerCPP *>(editor->lexer()), m_theme,
+                             Theme::monoFont(m_editorPointSize));
+        updateMarginWidth(editor);
+    }
 }
 
 QStringList MainWindow::compileOptions() const

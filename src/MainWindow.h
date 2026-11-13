@@ -4,6 +4,7 @@
 
 #include <QHash>
 #include <QList>
+#include <QSet>
 #include <QMainWindow>
 #include <QProcess>
 #include <QString>
@@ -16,6 +17,7 @@ class QJsonObject;
 class QMenu;
 class QPlainTextEdit;
 class QSplitter;
+class QTabWidget;
 class QTextDecoder;
 class QToolBar;
 class QsciScintilla;
@@ -43,7 +45,6 @@ private slots:
     void onProcessOutput();
     void onProcessFinished(int exitCode, QProcess::ExitStatus status);
     void onProcessError(QProcess::ProcessError error);
-    void updateMarginWidth();
     void toggleSerialMonitor(bool show);
 
     // File menu (MainWindowMenus.cpp)
@@ -55,7 +56,14 @@ private slots:
     void showAdvancedSettings(int tab = 0);
 
 private:
-    void setupEditor();
+    // Editor tabs
+    QsciScintilla *createEditor(const QString &filePath);
+    void setupEditor(QsciScintilla *editor);
+    QList<QsciScintilla *> editors() const;
+    bool anyModified() const;
+    void clearEditorBindings(QsciScintilla *editor);
+    void updateTabTitle(QsciScintilla *editor);
+    void updateMarginWidth(QsciScintilla *editor);
     void setupToolbar();
     QWidget *createOutputPane();
 
@@ -118,8 +126,10 @@ private:
 
     Theme::Mode m_theme = Theme::Mode::Dark;
 
+    // One editor per sketch file (.ino), in tabs; m_editor is the current tab's.
+    QTabWidget *m_tabs = nullptr;
     QsciScintilla *m_editor = nullptr;
-    ArduinoLexer *m_lexer = nullptr;
+    QSet<int> m_shortcutKeys;   // keys taken by menu shortcuts (removed from QScintilla)
     QPlainTextEdit *m_output = nullptr;
     QSplitter *m_topSplitter = nullptr;   // editor | serial monitor
     QSplitter *m_vSplitter = nullptr;     // top area / output pane

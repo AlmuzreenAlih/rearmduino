@@ -208,6 +208,18 @@ QComboBox QAbstractItemView {
     outline: 0;
 }
 
+QTabBar#sketchTabs { background: @window@; }
+QTabBar#sketchTabs::tab {
+    background: @window@;
+    color: @muted@;
+    border: none;
+    border-top: 2px solid transparent;
+    padding: 6px 16px;
+    margin-right: 1px;
+}
+QTabBar#sketchTabs::tab:hover:!selected { color: @text@; background: @hover@; }
+QTabBar#sketchTabs::tab:selected { background: @editorBg@; color: @text@; border-top: 2px solid @primary@; }
+
 QFrame#boardPopup {
     background: @window@;
     border: 1px solid @border@;

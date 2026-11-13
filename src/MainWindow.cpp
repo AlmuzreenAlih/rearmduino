@@ -36,6 +36,8 @@
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QTextCodec>
+#include <QTabBar>
+#include <QTabWidget>
 #include <QTimer>
 #include <QToolBar>
 #include <QVector>
@@ -75,17 +77,25 @@ MainWindow::MainWindow(const QString &sketchPath, QWidget *parent)
     loadPreferences();
     setupToolbar();
 
-    // Top: horizontal splitter, editor on the left; the Serial Monitor will be
-    // added lazily on the right later.
-    m_editor = new QsciScintilla;
-    setupEditor();
-    setupMenus();       // after the toolbar/editor: menus reuse their actions
+    // Top: horizontal splitter, editor tabs on the left; the Serial Monitor is
+    // added lazily on the right. Editors are created by resolveSketch().
+    m_tabs = new QTabWidget;
+    m_tabs->setDocumentMode(true);   // flat: no frame around the editor
+    m_tabs->tabBar()->setObjectName(QStringLiteral("sketchTabs"));
+    m_tabs->tabBar()->setExpanding(false);
+    m_tabs->tabBar()->setDrawBase(false);
+    connect(m_tabs, &QTabWidget::currentChanged, this, [this](int index) {
+        if (auto *editor = qobject_cast<QsciScintilla *>(m_tabs->widget(index)))
+            m_editor = editor;
+    });
+    setupMenus();       // after the toolbar: menus reuse its actions
     applyShortcuts();   // defaults + Advanced Settings overrides
     m_topSplitter = new QSplitter(Qt::Horizontal);
     m_topSplitter->setChildrenCollapsible(false);
-    m_topSplitter->addWidget(m_editor);
+    m_topSplitter->addWidget(m_tabs);
 
-    // Bottom: output/logs pane spanning the full width.
+    // Bottom: output/logs pane spanning the full width, 40% of the height at
+    // startup (stretch 3:2 keeps the ratio when the window is resized).
     m_vSplitter = new QSplitter(Qt::Vertical);
     m_vSplitter->setChildrenCollapsible(false);
     m_vSplitter->setHandleWidth(3);
@@ -93,7 +103,8 @@ MainWindow::MainWindow(const QString &sketchPath, QWidget *parent)
     m_outputPane = createOutputPane();
     m_vSplitter->addWidget(m_outputPane);
     m_vSplitter->setStretchFactor(0, 3);
-    m_vSplitter->setStretchFactor(1, 1);
+    m_vSplitter->setStretchFactor(1, 2);
+    m_vSplitter->setSizes({600, 400});   // proportional; rescaled to the real height
     setCentralWidget(m_vSplitter);
 
     applyTheme(m_theme);
@@ -113,10 +124,9 @@ MainWindow::MainWindow(const QString &sketchPath, QWidget *parent)
     if (!m_sketchIsTemp)
         addRecent(m_sketchDir);
     updateTitle();
-    connect(m_editor, &QsciScintilla::modificationChanged, this, &QWidget::setWindowModified);
     // Focus the editor once shown; otherwise activation focuses the first combo box
     // (amber focus ring at startup).
-    QTimer::singleShot(0, m_editor, [this] { m_editor->setFocus(); });
+    QTimer::singleShot(0, this, [this] { if (m_editor) m_editor->setFocus(); });
 
     // Fill the board list once the event loop runs (after the window is shown).
     // Ports are only scanned on demand: `board list` can hit the network.
@@ -238,37 +248,86 @@ QWidget *MainWindow::createOutputPane()
     return pane;
 }
 
-void MainWindow::setupEditor()
-{
-    m_lexer = new ArduinoLexer(m_editor);
-    m_editor->setLexer(m_lexer);
+// ---------------------------------------------------------------------------
+// Editor tabs
+// ---------------------------------------------------------------------------
 
-    m_editor->setFrameShape(QFrame::NoFrame);
-    m_editor->setUtf8(true);
+// One editor (with its own lexer: a lexer can only serve one editor) per file.
+QsciScintilla *MainWindow::createEditor(const QString &filePath)
+{
+    auto *editor = new QsciScintilla;
+    editor->setProperty("filePath", filePath);
+    editor->setLexer(new ArduinoLexer(editor));
+    setupEditor(editor);
+    clearEditorBindings(editor);
+    Theme::applyToEditor(editor, static_cast<QsciLexerCPP *>(editor->lexer()), m_theme,
+                         Theme::monoFont(m_editorPointSize));
+    connect(editor, &QsciScintilla::linesChanged, this, [this, editor] { updateMarginWidth(editor); });
+    connect(editor, &QsciScintilla::modificationChanged, this, [this, editor] {
+        updateTabTitle(editor);
+        setWindowModified(anyModified());
+    });
+    return editor;
+}
+
+void MainWindow::setupEditor(QsciScintilla *editor)
+{
+    editor->setFrameShape(QFrame::NoFrame);
+    editor->setUtf8(true);
     // Thin line-number margin, sized to the line count; margin 1 is a small gap
     // before the text. Both use the editor background (set by the theme).
-    m_editor->setMarginType(0, QsciScintilla::NumberMargin);
-    m_editor->setMarginLineNumbers(0, true);
-    m_editor->setMarginType(1, QsciScintilla::SymbolMargin);
-    m_editor->setMarginWidth(1, 12);
-    m_editor->setMarginSensitivity(1, false);
-    connect(m_editor, &QsciScintilla::linesChanged, this, &MainWindow::updateMarginWidth);
-    m_editor->setIndentationsUseTabs(false);
-    m_editor->setTabWidth(m_tabWidth);
-    m_editor->setAutoIndent(true);
-    m_editor->setBraceMatching(QsciScintilla::SloppyBraceMatch);
-    m_editor->setCaretLineVisible(true);
-    m_editor->SendScintilla(QsciScintilla::SCI_SETCARETLINEVISIBLEALWAYS, 1);   // also when unfocused
-    m_editor->setCaretWidth(2);
+    editor->setMarginType(0, QsciScintilla::NumberMargin);
+    editor->setMarginLineNumbers(0, true);
+    editor->setMarginType(1, QsciScintilla::SymbolMargin);
+    editor->setMarginWidth(1, 12);
+    editor->setMarginSensitivity(1, false);
+    editor->setIndentationsUseTabs(false);
+    editor->setTabWidth(m_tabWidth);
+    editor->setAutoIndent(true);
+    editor->setBraceMatching(QsciScintilla::SloppyBraceMatch);
+    editor->setCaretLineVisible(true);
+    editor->SendScintilla(QsciScintilla::SCI_SETCARETLINEVISIBLEALWAYS, 1);   // also when unfocused
+    editor->setCaretWidth(2);
 
     // Scintilla reserves a fixed 2000 px scroll width by default, so the
     // horizontal scrollbar always shows. Start small and grow with the longest
     // line instead. (Raw messages: works on every QScintilla version.)
-    m_editor->SendScintilla(QsciScintilla::SCI_SETSCROLLWIDTH, 1);
-    m_editor->SendScintilla(QsciScintilla::SCI_SETSCROLLWIDTHTRACKING, 1);
+    editor->SendScintilla(QsciScintilla::SCI_SETSCROLLWIDTH, 1);
+    editor->SendScintilla(QsciScintilla::SCI_SETSCROLLWIDTHTRACKING, 1);
+}
+
+QList<QsciScintilla *> MainWindow::editors() const
+{
+    QList<QsciScintilla *> list;
+    for (int i = 0; i < m_tabs->count(); ++i) {
+        if (auto *editor = qobject_cast<QsciScintilla *>(m_tabs->widget(i)))
+            list << editor;
+    }
+    return list;
+}
+
+bool MainWindow::anyModified() const
+{
+    for (const QsciScintilla *editor : editors()) {
+        if (editor->isModified())
+            return true;
+    }
+    return false;
+}
+
+// Tab label: file name, with a dot while it has unsaved changes.
+void MainWindow::updateTabTitle(QsciScintilla *editor)
+{
+    const int index = m_tabs->indexOf(editor);
+    if (index < 0)
+        return;
+    const QString name = QFileInfo(editor->property("filePath").toString()).fileName();
+    m_tabs->setTabText(index, editor->isModified() ? name + QStringLiteral("  ") + QChar(0x2022) : name);
+    m_tabs->setTabToolTip(index, QDir::toNativeSeparators(editor->property("filePath").toString()));
 }
 
 // Accepts a sketch folder, an .ino/.pde file, or nothing (untitled temp sketch).
+// Opens the main file plus every other .ino/.pde in the folder as tabs.
 void MainWindow::resolveSketch(const QString &path)
 {
     const QFileInfo info(path);
@@ -282,32 +341,63 @@ void MainWindow::resolveSketch(const QString &path)
         m_sketchFile = QDir(m_sketchDir).filePath(QFileInfo(m_sketchDir).fileName() + QStringLiteral(".ino"));
     }
 
-    QFile file(m_sketchFile);
-    if (file.open(QIODevice::ReadOnly)) {
-        m_editor->setText(QString::fromUtf8(file.readAll()));
-    } else {
-        m_editor->setText(QString::fromLatin1(kDefaultSketch));
+    // Close the previous sketch's tabs.
+    m_editor = nullptr;
+    while (m_tabs->count() > 0) {
+        QWidget *w = m_tabs->widget(0);
+        m_tabs->removeTab(0);
+        delete w;
     }
-    m_editor->setModified(false);
+
+    // Main file first, then the other sketch files alphabetically (like the Arduino IDE).
+    QStringList files{m_sketchFile};
+    const QStringList others = QDir(m_sketchDir).entryList({QStringLiteral("*.ino"), QStringLiteral("*.pde")},
+                                                           QDir::Files, QDir::Name | QDir::IgnoreCase);
+    for (const QString &name : others) {
+        const QString file = QDir(m_sketchDir).filePath(name);
+        if (QFileInfo(file) != QFileInfo(m_sketchFile))
+            files << file;
+    }
+
+    for (const QString &file : files) {
+        QsciScintilla *editor = createEditor(file);
+        QFile f(file);
+        if (f.open(QIODevice::ReadOnly))
+            editor->setText(QString::fromUtf8(f.readAll()));
+        else if (file == m_sketchFile)
+            editor->setText(QString::fromLatin1(kDefaultSketch));
+        editor->setModified(false);
+        m_tabs->addTab(editor, QString());
+        updateTabTitle(editor);
+        updateMarginWidth(editor);
+    }
+    m_tabs->setCurrentIndex(0);
+    m_editor = editors().value(0);
 }
 
-// Writes the editor to the sketch file (Verify/Upload do this too). Untitled /
-// example sketches stay "modified" so closing still asks to Save As.
+// Writes every tab to its file (Verify/Upload do this too, since arduino-cli
+// compiles all .ino files of the folder). Untitled / example sketches stay
+// "modified" so closing still asks to Save As.
 bool MainWindow::saveSketch()
 {
     if (!QDir().mkpath(m_sketchDir)) {
         appendLog(tr("Error: cannot create sketch folder %1").arg(m_sketchDir));
         return false;
     }
-    QFile file(m_sketchFile);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        appendLog(tr("Error: cannot write %1: %2").arg(m_sketchFile, file.errorString()));
-        return false;
+    bool ok = true;
+    for (QsciScintilla *editor : editors()) {
+        const QString path = editor->property("filePath").toString();
+        QFile file(path);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            appendLog(tr("Error: cannot write %1: %2").arg(QDir::toNativeSeparators(path), file.errorString()));
+            ok = false;
+            continue;
+        }
+        file.write(editor->text().toUtf8());
+        if (!m_sketchIsTemp)
+            editor->setModified(false);
     }
-    file.write(m_editor->text().toUtf8());
-    if (!m_sketchIsTemp)
-        m_editor->setModified(false);
-    return true;
+    return ok;
 }
 
 // Advanced Settings path if set and executable, otherwise PATH.
@@ -752,11 +842,11 @@ void MainWindow::onPortActivated(int index)
 
 // ---------------------------------------------------------------------------
 
-void MainWindow::updateMarginWidth()
+void MainWindow::updateMarginWidth(QsciScintilla *editor)
 {
     // At least 3 digits wide, plus one digit of left padding.
-    const int digits = qMax(3, int(QString::number(m_editor->lines()).size()));
-    m_editor->setMarginWidth(0, QString(digits + 1, QLatin1Char('0')));
+    const int digits = qMax(3, int(QString::number(editor->lines()).size()));
+    editor->setMarginWidth(0, QString(digits + 1, QLatin1Char('0')));
 }
 
 // Splitter handles: plain colored strips (palette, not stylesheet).
@@ -787,15 +877,20 @@ void MainWindow::applyTheme(Theme::Mode mode)
 
     // Stylesheet only on the widgets that need it, never on the editor.
     const QString qss = Theme::styleSheet(mode);
-    for (QWidget *w : {static_cast<QWidget *>(m_toolbar), static_cast<QWidget *>(menuBar()), m_outputPane})
+    // (The tab bar, not the tab widget: that would cascade into the editors.)
+    for (QWidget *w : {static_cast<QWidget *>(m_toolbar), static_cast<QWidget *>(menuBar()), m_outputPane,
+                       static_cast<QWidget *>(m_tabs->tabBar())})
         w->setStyleSheet(qss);
     if (m_serial)
         m_serial->setStyleSheet(qss);
     themeSplitterHandles();
 
     const Theme::Colors c = Theme::colors(mode);
-    Theme::applyToEditor(m_editor, m_lexer, mode, Theme::monoFont(m_editorPointSize));
-    updateMarginWidth();
+    for (QsciScintilla *editor : editors()) {
+        Theme::applyToEditor(editor, static_cast<QsciLexerCPP *>(editor->lexer()), mode,
+                             Theme::monoFont(m_editorPointSize));
+        updateMarginWidth(editor);
+    }
     m_serialAction->setIcon(Theme::svgIcon(QStringLiteral(":/icons/serial.svg"), c.text));
 
     m_verifyAction->setIcon(Theme::svgIcon(QStringLiteral(":/icons/verify.svg"), c.onSecondary));
