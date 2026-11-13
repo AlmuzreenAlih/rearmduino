@@ -93,10 +93,16 @@ MainWindow::MainWindow(const QString &sketchPath, QWidget *parent)
 
     applyTheme(m_theme);
     // Default size, but never larger than 90% of the screen (the Pi is 1280x720).
+    // Centered, so the window manager can't push the bottom off a small screen.
     QSize size(1100, 760);
-    if (const QScreen *screen = QGuiApplication::primaryScreen())
-        size = size.boundedTo(screen->availableGeometry().size() * 0.9);
-    resize(size);
+    if (const QScreen *screen = QGuiApplication::primaryScreen()) {
+        const QRect avail = screen->availableGeometry();
+        size = size.boundedTo(avail.size() * 0.9);
+        resize(size);
+        move(avail.center() - QPoint(size.width() / 2, size.height() / 2));
+    } else {
+        resize(size);
+    }
     resolveSketch(sketchPath);
     // Focus the editor once shown; otherwise activation focuses the first combo box
     // (amber focus ring at startup).
@@ -150,7 +156,8 @@ void MainWindow::setupToolbar()
     toolbar->addWidget(boardLabel);
     m_boardCombo = new QComboBox;
     m_boardCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    m_boardCombo->setMinimumContentsLength(24);
+    // Narrow enough that the whole toolbar fits ~800 px; the popup still widens to fit names.
+    m_boardCombo->setMinimumContentsLength(20);
     m_boardCombo->setMaxVisibleItems(25);
     m_boardCombo->addItem(settings.value(QStringLiteral("board/name"), QString::fromLatin1(kDefaultBoardName)).toString(),
                           settings.value(QStringLiteral("board/fqbn"), QString::fromLatin1(kDefaultFqbn)).toString());
@@ -169,7 +176,7 @@ void MainWindow::setupToolbar()
     toolbar->addWidget(new QLabel(tr("Port")));
     m_portCombo = new PortComboBox;
     m_portCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    m_portCombo->setMinimumContentsLength(18);
+    m_portCombo->setMinimumContentsLength(10);
     m_portCombo->setToolTip(tr("Open to scan for connected boards"));
     const QString savedPort = settings.value(QStringLiteral("port/address")).toString();
     if (!savedPort.isEmpty()) {
