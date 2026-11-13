@@ -208,6 +208,22 @@ QComboBox QAbstractItemView {
     outline: 0;
 }
 
+QFrame#boardPopup {
+    background: @window@;
+    border: 1px solid @border@;
+}
+QListView#boardList {
+    background: @editorBg@;
+    color: @text@;
+    border: 1px solid @border@;
+    border-radius: 4px;
+    outline: 0;
+}
+QListView#boardList::item { padding: 4px 8px; }
+QListView#boardList::item:hover { background: @hover@; }
+QListView#boardList::item:selected { background: @hover@; color: @text@; border-left: 3px solid @primary@; }
+QLabel#boardEmpty { color: @muted@; padding: 16px; }
+
 QToolButton#serialButton {
     background: transparent;
     color: @text@;

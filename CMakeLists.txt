@@ -43,6 +43,8 @@ add_executable(myide WIN32
     src/MainWindow.h
     src/PortComboBox.h
     src/ArduinoLexer.h
+    src/BoardComboBox.cpp
+    src/BoardComboBox.h
     src/Theme.cpp
     src/Theme.h
     src/SerialMonitor.cpp

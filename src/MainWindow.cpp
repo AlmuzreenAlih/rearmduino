@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "ArduinoLexer.h"
+#include "BoardComboBox.h"
 #include "PortComboBox.h"
 #include "SerialMonitor.h"
 
@@ -156,12 +157,11 @@ void MainWindow::setupToolbar()
     auto *boardLabel = new QLabel(tr("Board"));
     boardLabel->setContentsMargins(12, 0, 0, 0);
     toolbar->addWidget(boardLabel);
-    m_boardCombo = new QComboBox;
+    m_boardCombo = new BoardComboBox;   // dropdown with a search field
     m_boardCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     // Narrow enough that the whole toolbar (incl. Serial) fits ~850 px, as on the
     // Pi; the popup still widens to fit long board names.
     m_boardCombo->setMinimumContentsLength(16);
-    m_boardCombo->setMaxVisibleItems(25);
     m_boardCombo->addItem(settings.value(QStringLiteral("board/name"), QString::fromLatin1(kDefaultBoardName)).toString(),
                           settings.value(QStringLiteral("board/fqbn"), QString::fromLatin1(kDefaultFqbn)).toString());
     m_boardCombo->setToolTip(currentFqbn());
