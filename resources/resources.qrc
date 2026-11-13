@@ -1,0 +1,10 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+  <qresource prefix="/">
+    <file>fonts/JetBrainsMonoNL-Regular.ttf</file>
+    <file>fonts/JetBrainsMonoNL-Italic.ttf</file>
+    <file>icons/verify.svg</file>
+    <file>icons/upload.svg</file>
+    <file>icons/chevron-down.svg</file>
+  </qresource>
+</RCC>

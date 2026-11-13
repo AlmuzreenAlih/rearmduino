@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Theme.h"
+
 #include <QMainWindow>
 #include <QProcess>
 #include <QString>
@@ -13,6 +15,7 @@ class QPlainTextEdit;
 class QSplitter;
 class QTextDecoder;
 class QsciScintilla;
+class ArduinoLexer;
 class PortComboBox;
 
 class MainWindow : public QMainWindow
@@ -32,12 +35,18 @@ private slots:
     void onProcessOutput();
     void onProcessFinished(int exitCode, QProcess::ExitStatus status);
     void onProcessError(QProcess::ProcessError error);
+    void updateMarginWidth();
 
 private:
     void setupEditor();
     void setupToolbar();
+    void setupMenus();
+    QWidget *createOutputPane();
     void resolveSketch(const QString &path);
     bool saveSketch();
+
+    void applyTheme(Theme::Mode mode);
+    void recolorOutput();
 
     QString cliPath();
     void startTask(const QString &name, const QStringList &args);
@@ -52,15 +61,21 @@ private:
     QString currentFqbn() const;
     QString currentPort() const;
 
-    void appendLog(const QString &line);
+    void appendLog(const QString &line);                       // kind detected from text
+    void appendLog(const QString &line, Theme::LogKind kind);
     void flushPartialLine();
     void setBusy(bool busy);
 
+    Theme::Mode m_theme = Theme::Mode::Dark;
+
     QsciScintilla *m_editor = nullptr;
+    ArduinoLexer *m_lexer = nullptr;
     QPlainTextEdit *m_output = nullptr;
     QSplitter *m_topSplitter = nullptr;   // editor | (future) serial monitor
     QAction *m_verifyAction = nullptr;
     QAction *m_uploadAction = nullptr;
+    QAction *m_darkThemeAction = nullptr;
+    QAction *m_lightThemeAction = nullptr;
     QComboBox *m_boardCombo = nullptr;
     PortComboBox *m_portCombo = nullptr;
 

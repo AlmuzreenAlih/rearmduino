@@ -1,10 +1,19 @@
 #include "MainWindow.h"
+#include "ArduinoLexer.h"
 #include "PortComboBox.h"
 
 #include <Qsci/qsciscintilla.h>
-#include <Qsci/qscilexercpp.h>
 
 #include <QAction>
+#include <QActionGroup>
+#include <QApplication>
+#include <QMenuBar>
+#include <QRegularExpression>
+#include <QTextBlock>
+#include <QTextCharFormat>
+#include <QTextCursor>
+#include <QTextDocument>
+#include <QVBoxLayout>
 #include <QCollator>
 #include <QDir>
 #include <QFile>
@@ -37,18 +46,8 @@ constexpr int FqbnRole = Qt::UserRole;            // board combo + port combo (m
 constexpr int PortAddressRole = Qt::UserRole + 1; // port combo
 constexpr int BoardNameRole = Qt::UserRole + 2;   // port combo (matched board)
 
-// Monospace font for the editor and output pane. Windows' "system fixed font"
-// is Courier New, so use Consolas there; elsewhere use the desktop's monospace font.
-QFont monoFont()
-{
-#ifdef Q_OS_WIN
-    QFont font(QStringLiteral("Consolas"), 10);
-    font.setStyleHint(QFont::Monospace);
-    return font;
-#else
-    return QFontDatabase::systemFont(QFontDatabase::FixedFont);
-#endif
-}
+constexpr qreal kEditorPointSize = 11;
+constexpr qreal kOutputPointSize = 10;
 
 const char kDefaultSketch[] =
     "void setup() {\n"
@@ -63,6 +62,13 @@ const char kDefaultSketch[] =
 MainWindow::MainWindow(const QString &sketchPath, QWidget *parent)
     : QMainWindow(parent)
 {
+    // Palette + stylesheet before any child widget exists (cheaper than re-polishing).
+    m_theme = QSettings().value(QStringLiteral("view/theme")).toString() == QLatin1String("light")
+                  ? Theme::Mode::Light : Theme::Mode::Dark;
+    qApp->setPalette(Theme::palette(m_theme));
+    qApp->setStyleSheet(Theme::styleSheet(m_theme));
+
+    setupMenus();
     setupToolbar();
 
     // Top: horizontal splitter, editor on the left; the Serial Monitor will be
@@ -70,24 +76,24 @@ MainWindow::MainWindow(const QString &sketchPath, QWidget *parent)
     m_editor = new QsciScintilla;
     setupEditor();
     m_topSplitter = new QSplitter(Qt::Horizontal);
+    m_topSplitter->setChildrenCollapsible(false);
     m_topSplitter->addWidget(m_editor);
 
     // Bottom: output/logs pane spanning the full width.
-    m_output = new QPlainTextEdit;
-    m_output->setReadOnly(true);
-    m_output->setMaximumBlockCount(10000);
-    m_output->setFont(monoFont());
-    m_output->setLineWrapMode(QPlainTextEdit::NoWrap);
-
     auto *vertical = new QSplitter(Qt::Vertical);
+    vertical->setChildrenCollapsible(false);
     vertical->addWidget(m_topSplitter);
-    vertical->addWidget(m_output);
+    vertical->addWidget(createOutputPane());
     vertical->setStretchFactor(0, 3);
     vertical->setStretchFactor(1, 1);
     setCentralWidget(vertical);
 
-    resize(1000, 700);
+    applyTheme(m_theme);
+    resize(1100, 760);
     resolveSketch(sketchPath);
+    // Focus the editor once shown; otherwise activation focuses the first combo box
+    // (amber focus ring at startup).
+    QTimer::singleShot(0, m_editor, [this] { m_editor->setFocus(); });
 
     // Fill the board list once the event loop runs (after the window is shown).
     // Ports are only scanned on demand: `board list` can hit the network.
@@ -109,22 +115,32 @@ MainWindow::~MainWindow()
 void MainWindow::setupToolbar()
 {
     QToolBar *toolbar = addToolBar(tr("Main"));
+    toolbar->setObjectName(QStringLiteral("mainToolbar"));
     toolbar->setMovable(false);
-    toolbar->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    toolbar->setContextMenuPolicy(Qt::PreventContextMenu);
+    toolbar->setIconSize(QSize(18, 18));
+    toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
 
     m_verifyAction = toolbar->addAction(tr("Verify"), this, &MainWindow::verify);
     m_verifyAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_R));
-    m_verifyAction->setToolTip(tr("Compile the sketch (Ctrl+R)"));
+    m_verifyAction->setToolTip(tr("Verify: compile the sketch (Ctrl+R)"));
+    toolbar->widgetForAction(m_verifyAction)->setObjectName(QStringLiteral("verifyButton"));
 
     m_uploadAction = toolbar->addAction(tr("Upload"), this, &MainWindow::upload);
     m_uploadAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_U));
-    m_uploadAction->setToolTip(tr("Compile and upload to the selected port (Ctrl+U)"));
+    m_uploadAction->setToolTip(tr("Upload: compile and upload to the selected port (Ctrl+U)"));
+    toolbar->widgetForAction(m_uploadAction)->setObjectName(QStringLiteral("uploadButton"));
+    // No focus on click; keyboard users have Ctrl+R / Ctrl+U. (Accessibility
+    // "press" still focuses them: see setBusy().)
+    for (QAction *a : {m_verifyAction, m_uploadAction})
+        toolbar->widgetForAction(a)->setFocusPolicy(Qt::NoFocus);
 
-    toolbar->addSeparator();
     QSettings settings;
 
     // Board: starts with just the remembered board; the full list loads later.
-    toolbar->addWidget(new QLabel(tr(" Board: ")));
+    auto *boardLabel = new QLabel(tr("Board"));
+    boardLabel->setContentsMargins(12, 0, 0, 0);
+    toolbar->addWidget(boardLabel);
     m_boardCombo = new QComboBox;
     m_boardCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     m_boardCombo->setMinimumContentsLength(24);
@@ -143,7 +159,7 @@ void MainWindow::setupToolbar()
     toolbar->addWidget(m_boardCombo);
 
     // Port: remembered port only; rescanned each time the dropdown opens.
-    toolbar->addWidget(new QLabel(tr("  Port: ")));
+    toolbar->addWidget(new QLabel(tr("Port")));
     m_portCombo = new PortComboBox;
     m_portCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     m_portCombo->setMinimumContentsLength(18);
@@ -162,25 +178,64 @@ void MainWindow::setupToolbar()
     toolbar->addWidget(m_portCombo);
 }
 
+void MainWindow::setupMenus()
+{
+    QMenu *view = menuBar()->addMenu(tr("&View"));
+    auto *group = new QActionGroup(this);
+    m_darkThemeAction = view->addAction(tr("Dark Theme"));
+    m_lightThemeAction = view->addAction(tr("Light Theme"));
+    for (QAction *a : {m_darkThemeAction, m_lightThemeAction}) {
+        a->setCheckable(true);
+        group->addAction(a);
+    }
+    connect(m_darkThemeAction, &QAction::triggered, this, [this] { applyTheme(Theme::Mode::Dark); });
+    connect(m_lightThemeAction, &QAction::triggered, this, [this] { applyTheme(Theme::Mode::Light); });
+}
+
+QWidget *MainWindow::createOutputPane()
+{
+    auto *pane = new QWidget;
+    auto *layout = new QVBoxLayout(pane);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+
+    auto *header = new QLabel(tr("Output"));
+    header->setObjectName(QStringLiteral("outputHeader"));
+    layout->addWidget(header);
+
+    m_output = new QPlainTextEdit;
+    m_output->setObjectName(QStringLiteral("output"));
+    m_output->setReadOnly(true);
+    m_output->setMaximumBlockCount(10000);
+    m_output->setFont(Theme::monoFont(kOutputPointSize));
+    m_output->setLineWrapMode(QPlainTextEdit::NoWrap);
+    m_output->setFrameShape(QFrame::NoFrame);
+    layout->addWidget(m_output);
+    return pane;
+}
+
 void MainWindow::setupEditor()
 {
-    const QFont font = monoFont();
+    m_lexer = new ArduinoLexer(m_editor);
+    m_editor->setLexer(m_lexer);
 
-    auto *lexer = new QsciLexerCPP(m_editor);
-    lexer->setDefaultFont(font);
-    lexer->setFont(font);
-    m_editor->setLexer(lexer);
-
+    m_editor->setFrameShape(QFrame::NoFrame);
     m_editor->setUtf8(true);
+    // Thin line-number margin, sized to the line count; margin 1 is a small gap
+    // before the text. Both use the editor background (set by the theme).
     m_editor->setMarginType(0, QsciScintilla::NumberMargin);
     m_editor->setMarginLineNumbers(0, true);
-    m_editor->setMarginsFont(font);
-    m_editor->setMarginWidth(0, QStringLiteral("00000"));
+    m_editor->setMarginType(1, QsciScintilla::SymbolMargin);
+    m_editor->setMarginWidth(1, 12);
+    m_editor->setMarginSensitivity(1, false);
+    connect(m_editor, &QsciScintilla::linesChanged, this, &MainWindow::updateMarginWidth);
     m_editor->setIndentationsUseTabs(false);
     m_editor->setTabWidth(2);
     m_editor->setAutoIndent(true);
     m_editor->setBraceMatching(QsciScintilla::SloppyBraceMatch);
     m_editor->setCaretLineVisible(true);
+    m_editor->SendScintilla(QsciScintilla::SCI_SETCARETLINEVISIBLEALWAYS, 1);   // also when unfocused
+    m_editor->setCaretWidth(2);
 
     // Scintilla reserves a fixed 2000 px scroll width by default, so the
     // horizontal scrollbar always shows. Start small and grow with the longest
@@ -275,7 +330,7 @@ void MainWindow::upload()
     }
     if (currentPort().isEmpty()) {
         // No port chosen yet: scan once, auto-pick a single detected board, then upload.
-        appendLog(tr("No port selected, scanning for boards..."));
+        appendLog(tr("No port selected, scanning for boards..."), Theme::LogKind::Command);
         m_taskName = tr("Upload");
         m_uploadAfterScan = true;
         setBusy(true);
@@ -320,7 +375,7 @@ void MainWindow::startTask(const QString &name, const QStringList &args)
     m_partialLine.clear();
     m_taskName = name;
 
-    appendLog(QStringLiteral("> arduino-cli %1").arg(args.join(QLatin1Char(' '))));
+    appendLog(QStringLiteral("> arduino-cli %1").arg(args.join(QLatin1Char(' '))), Theme::LogKind::Command);
     setBusy(true);
     m_process->start(cli, args);
 }
@@ -353,11 +408,11 @@ void MainWindow::onProcessFinished(int exitCode, QProcess::ExitStatus status)
     onProcessOutput();
     flushPartialLine();
     if (status == QProcess::CrashExit)
-        appendLog(tr("arduino-cli crashed."));
+        appendLog(tr("arduino-cli crashed."), Theme::LogKind::Error);
     else if (exitCode == 0)
-        appendLog(tr("%1 finished: OK.").arg(m_taskName));
+        appendLog(tr("%1 finished: OK.").arg(m_taskName), Theme::LogKind::Success);
     else
-        appendLog(tr("%1 failed (exit code %2).").arg(m_taskName).arg(exitCode));
+        appendLog(tr("%1 failed (exit code %2).").arg(m_taskName).arg(exitCode), Theme::LogKind::Error);
     setBusy(false);
 }
 
@@ -400,7 +455,7 @@ QProcess *MainWindow::startCliJson(const QStringList &args,
                 appendLog(tr("Error: unexpected output from arduino-cli %1: %2").arg(cmd, parseError.errorString()));
         } else {
             const QString msg = QString::fromUtf8(err.isEmpty() ? out : err).trimmed();
-            appendLog(tr("arduino-cli %1 failed: %2").arg(cmd, msg));
+            appendLog(tr("arduino-cli %1 failed: %2").arg(cmd, msg), Theme::LogKind::Error);
         }
         if (onDone)
             onDone();
@@ -451,7 +506,8 @@ void MainWindow::onBoardsLoaded(const QJsonObject &json)
         }
     }
     if (boards.isEmpty()) {
-        appendLog(tr("No boards found. Install a core, e.g. `arduino-cli core install arduino:avr`."));
+        appendLog(tr("No boards found. Install a core, e.g. `arduino-cli core install arduino:avr`."),
+                  Theme::LogKind::Warning);
         return;
     }
 
@@ -593,15 +649,96 @@ void MainWindow::onPortActivated(int index)
 
 // ---------------------------------------------------------------------------
 
+void MainWindow::updateMarginWidth()
+{
+    // At least 3 digits wide, plus one digit of left padding.
+    const int digits = qMax(3, int(QString::number(m_editor->lines()).size()));
+    m_editor->setMarginWidth(0, QString(digits + 1, QLatin1Char('0')));
+}
+
+void MainWindow::applyTheme(Theme::Mode mode)
+{
+    const bool changed = mode != m_theme;
+    m_theme = mode;
+    if (changed) {
+        qApp->setPalette(Theme::palette(mode));
+        qApp->setStyleSheet(Theme::styleSheet(mode));
+        QSettings().setValue(QStringLiteral("view/theme"),
+                             mode == Theme::Mode::Light ? QStringLiteral("light") : QStringLiteral("dark"));
+    }
+    (mode == Theme::Mode::Light ? m_lightThemeAction : m_darkThemeAction)->setChecked(true);
+
+    Theme::applyToEditor(m_editor, m_lexer, mode, Theme::monoFont(kEditorPointSize));
+    updateMarginWidth();
+
+    const Theme::Colors c = Theme::colors(mode);
+    m_verifyAction->setIcon(Theme::svgIcon(QStringLiteral(":/icons/verify.svg"), c.onSecondary));
+    m_uploadAction->setIcon(Theme::svgIcon(QStringLiteral(":/icons/upload.svg"), c.onPrimary));
+
+    if (changed)
+        recolorOutput();
+}
+
+// Re-applies line colors after a theme switch (each line remembers its kind).
+void MainWindow::recolorOutput()
+{
+    QTextDocument *doc = m_output->document();
+    QTextCursor cursor(doc);
+    cursor.beginEditBlock();
+    for (QTextBlock block = doc->begin(); block.isValid(); block = block.next()) {
+        QTextCharFormat format;
+        format.setForeground(Theme::logColor(Theme::LogKind(qMax(0, block.userState())), m_theme));
+        QTextCursor c(block);
+        c.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+        c.setCharFormat(format);
+    }
+    cursor.endEditBlock();
+}
+
+// arduino-cli output: classify by content.
 void MainWindow::appendLog(const QString &line)
 {
-    m_output->appendPlainText(line);
+    static const QRegularExpression errorRe(QStringLiteral("\\berror\\b"),
+                                            QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression warningRe(QStringLiteral("\\bwarning\\b"),
+                                              QRegularExpression::CaseInsensitiveOption);
+    Theme::LogKind kind = Theme::LogKind::Normal;
+    if (line.startsWith(QLatin1String("Sent: ")))
+        kind = Theme::LogKind::Sent;
+    else if (errorRe.match(line).hasMatch())
+        kind = Theme::LogKind::Error;
+    else if (warningRe.match(line).hasMatch())
+        kind = Theme::LogKind::Warning;
+    appendLog(line, kind);
+}
+
+void MainWindow::appendLog(const QString &line, Theme::LogKind kind)
+{
+    QTextCharFormat format;
+    format.setForeground(Theme::logColor(kind, m_theme));
+
+    QTextDocument *doc = m_output->document();
+    QTextCursor cursor(doc);
+    cursor.movePosition(QTextCursor::End);
+    if (!doc->isEmpty())
+        cursor.insertBlock();
+    cursor.insertText(line, format);
+    cursor.block().setUserState(int(kind));
+
     QScrollBar *bar = m_output->verticalScrollBar();
     bar->setValue(bar->maximum());
 }
 
 void MainWindow::setBusy(bool busy)
 {
+    // A focused button that gets disabled hands focus to the next widget (the
+    // Board combo). Return it to the editor instead.
+    if (busy) {
+        const QWidget *focused = QApplication::focusWidget();
+        if (focused && (focused->objectName() == QLatin1String("verifyButton")
+                        || focused->objectName() == QLatin1String("uploadButton")))
+            m_editor->setFocus();
+    }
     m_verifyAction->setEnabled(!busy);
     m_uploadAction->setEnabled(!busy);
     if (busy)

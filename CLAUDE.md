@@ -33,7 +33,7 @@ Startup speed is the top priority: the main window must appear almost instantly,
 - arduino-cli **1.5.1** (Commit 01f3d4f2b, 2026-06-05)
   - real binary: `/home/rpi/.local/bin/arduino-cli`, symlinked to `/usr/local/bin/arduino-cli`
 - Qt 5.15 and QScintilla come from apt. Required packages:
-  `build-essential cmake ninja-build git qtbase5-dev libqt5serialport5-dev libqscintilla2-qt5-dev`
+  `build-essential cmake ninja-build git qtbase5-dev libqt5serialport5-dev libqscintilla2-qt5-dev libqt5svg5-dev`
   (check with `dpkg -s` before assuming they are installed; ask me before running `sudo apt install`)
 
 ## arduino-cli notes
@@ -76,6 +76,32 @@ QScintilla ships no CMake config file. Find it with `find_path` / `find_library`
 - Create the Serial Monitor widget lazily on first open, not at startup.
 - Before uploading, close the serial port if the monitor has it open (otherwise the upload
   fails with "port busy", especially on Windows), then reopen it after the upload finishes.
+
+## Brand colors (ReArm Automation)
+
+All UI colors come from this palette. Define them once (e.g. a `Theme` header) and reuse;
+never hard-code colors elsewhere.
+
+| Name          | Hex       | Use                                                        |
+|---------------|-----------|------------------------------------------------------------|
+| Navy Deep     | `#071A33` | Editor background, output pane background                  |
+| Navy          | `#0B2545` | Window, toolbar, panels                                    |
+| Navy Light    | `#163A66` | Hover, current-line highlight, borders, splitter handles   |
+| Amber         | `#F5A623` | Primary accent: Upload button, focus rings, active items   |
+| Sky Blue      | `#2E9BE6` | Secondary accent: Verify button, links, selection          |
+| White         | `#FFFFFF` | Main text                                                  |
+| Slate         | `#8FA3BF` | Secondary text, line numbers, comments                     |
+
+Dark theme (default):
+- Editor: Navy Deep background, white text, Slate line numbers on a Navy Deep margin,
+  Navy Light current line, Sky Blue selection (about 40% opacity).
+- C++ lexer: keywords Sky Blue, types/preprocessor Amber, numbers Amber,
+  strings `#9ED39A` (soft green, for readability), comments Slate italic.
+- Output pane: errors `#FF6B6B`, warnings Amber, success `#6FCF97`, `Sent:` lines Sky Blue.
+- Buttons: Upload filled Amber with Navy text; Verify filled Sky Blue with white text.
+
+Light theme: white background, Navy text, same Amber and Sky Blue accents. Use Amber only
+for fills and borders there, never for text (poor contrast on white).
 
 ## Startup-speed rules
 

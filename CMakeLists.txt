@@ -6,12 +6,13 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-find_package(Qt5 5.15 REQUIRED COMPONENTS Widgets)
+find_package(Qt5 5.15 REQUIRED COMPONENTS Widgets Svg)   # Svg: themed toolbar icons
 
 # ---- QScintilla (no CMake config shipped; locate it next to Qt) ----------
 get_filename_component(QT_LIB_DIR "${Qt5_DIR}/../.." ABSOLUTE)   # <prefix>/lib or /usr/lib/<arch>
@@ -41,11 +42,16 @@ add_executable(myide WIN32
     src/MainWindow.cpp
     src/MainWindow.h
     src/PortComboBox.h
+    src/ArduinoLexer.h
+    src/Theme.cpp
+    src/Theme.h
+    resources/resources.qrc
 )
 
 target_include_directories(myide PRIVATE ${QSCINTILLA_INCLUDE_DIR})
 target_link_libraries(myide PRIVATE
     Qt5::Widgets
+    Qt5::Svg
     optimized ${QSCINTILLA_LIBRARY_RELEASE}
     debug     ${QSCINTILLA_LIBRARY_DEBUG}
 )
