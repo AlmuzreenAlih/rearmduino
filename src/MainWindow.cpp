@@ -9,6 +9,7 @@
 #include <QApplication>
 #include <QMenuBar>
 #include <QRegularExpression>
+#include <QScreen>
 #include <QTextBlock>
 #include <QTextCharFormat>
 #include <QTextCursor>
@@ -89,7 +90,11 @@ MainWindow::MainWindow(const QString &sketchPath, QWidget *parent)
     setCentralWidget(vertical);
 
     applyTheme(m_theme);
-    resize(1100, 760);
+    // Default size, but never larger than 90% of the screen (the Pi is 1280x720).
+    QSize size(1100, 760);
+    if (const QScreen *screen = QGuiApplication::primaryScreen())
+        size = size.boundedTo(screen->availableGeometry().size() * 0.9);
+    resize(size);
     resolveSketch(sketchPath);
     // Focus the editor once shown; otherwise activation focuses the first combo box
     // (amber focus ring at startup).
