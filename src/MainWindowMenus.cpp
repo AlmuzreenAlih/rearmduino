@@ -44,6 +44,7 @@
 #include <QRegularExpression>
 #include <QSet>
 #include <QSettings>
+#include <QTimer>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QUrl>
@@ -173,6 +174,9 @@ void MainWindow::setupMenus()
     tools->addSeparator();
     tools->addAction(m_serialAction);
     registerAction(m_serialAction, "tools.serialMonitor", key(Qt::CTRL | Qt::SHIFT | Qt::Key_M));
+    if (UsbDrivers::canRestartPorts())
+        registerAction(tools->addAction(tr("Restart &USB Device..."), this, &MainWindow::restartUsbDevice),
+                       "tools.restartUsb", QKeySequence());
     if (UsbDrivers::supported()) {   // Windows: drivers and the portable folder
         tools->addSeparator();
         registerAction(tools->addAction(tr("Check USB &Drivers..."), this, [this] { checkUsbDrivers(true); }),
@@ -887,6 +891,41 @@ void MainWindow::offerUsbRestart(const QString &portName, const QString &error)
         m_usbRestartBusy = false;
         return;
     }
+    runUsbRestart(portName);
+}
+
+// Tools > Restart USB Device: the same restart, any time (e.g. the monitor went
+// silent without an error).
+void MainWindow::restartUsbDevice()
+{
+    if (m_usbRestartBusy)
+        return;
+    const QString portName = currentPort();
+    if (portName.isEmpty()) {
+        appendLog(tr("Restart USB Device: no port selected."), Theme::LogKind::Warning);
+        return;
+    }
+    if (!isPortPresent(portName)) {
+        appendLog(tr("Restart USB Device: %1 is disconnected.").arg(portName), Theme::LogKind::Warning);
+        return;
+    }
+    m_usbRestartBusy = true;
+    const QString info = tr("This is the same as unplugging the board and plugging it back in; "
+                            "the running sketch restarts.%1")
+                             .arg(UsbDrivers::supported() ? tr(" Windows will ask for administrator permission.")
+                                                          : QString());
+    if (QMessageBox::question(this, tr("Restart USB Device"),
+                              tr("Restart the USB device of %1?").arg(portName) + QStringLiteral("\n\n") + info,
+                              QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Yes)
+        != QMessageBox::Yes) {
+        m_usbRestartBusy = false;
+        return;
+    }
+    runUsbRestart(portName);
+}
+
+void MainWindow::runUsbRestart(const QString &portName)
+{
     if (m_serial)
         m_serial->closePort();
     appendLog(tr("Restarting the USB device of %1...").arg(portName), Theme::LogKind::Command);
@@ -898,6 +937,14 @@ void MainWindow::offerUsbRestart(const QString &portName, const QString &error)
         // Back on the same port name after re-enumeration: reopen (the board resets).
         if (m_serial && m_serial->isVisible() && m_serial->portName() == portName)
             m_serial->reopenWithRetry(10);
+        // Not back under the same name: the board re-enumerated as another port or
+        // not at all. Report it, since that points at a hardware/electrical problem.
+        QTimer::singleShot(5000, this, [this, portName] {
+            if (!isPortPresent(portName))
+                appendLog(tr("%1 did not come back after the USB restart. If the board now shows under another "
+                             "port, or not at all, check its power and wiring.").arg(portName),
+                          Theme::LogKind::Warning);
+        });
     });
 }
 

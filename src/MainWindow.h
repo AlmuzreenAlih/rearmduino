@@ -97,6 +97,8 @@ private:
     // from the menu (always reports); otherwise asks at most once per kind per session.
     void checkUsbDrivers(bool interactive);
     void offerUsbRestart(const QString &portName, const QString &error);   // stuck/"busy" port
+    void restartUsbDevice();                      // Tools > Restart USB Device
+    void runUsbRestart(const QString &portName);
 
     // Sketch files (MainWindowMenus.cpp)
     bool maybeSave();
