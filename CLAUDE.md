@@ -1,7 +1,26 @@
-# Project: Lightweight Arduino IDE
+# Project: REARMduino (lightweight Arduino IDE)
 
 A fast-starting desktop Arduino IDE that runs on Windows and Raspberry Pi OS Bullseye.
 Startup speed is the top priority: the main window must appear almost instantly, even on the Pi.
+
+## Name and logo
+
+- User-facing name: **REARMduino** (window title, About, portable readme/folder name).
+- Internal name stays `myide`: CMake target and `myide.exe`, QSettings organization/application
+  (registry `HKCU\Software\myide\myide`, or `settings/myide/myide.ini` in a portable copy), temp
+  folders, `linux/99-myide-usb-reset.rules`. Renaming the QSettings names would reset users' settings.
+- Logo: `resources/app/` (`rearmduino-512.png` is the master). The 16-256 px PNGs are in
+  `resources.qrc` for the window icon (set in `main.cpp`); `rearmduino.ico` + `rearmduino.rc` give
+  the Windows .exe icon (added in CMake only on WIN32).
+
+## Portable version and USB drivers (Windows)
+
+- Tools > Create Portable Version always bundles the Arduino drivers (from the AVR core) in
+  `drivers/arduino`. The CH340 driver (clone boards) is bundled in `drivers/CH340` only if a
+  folder/.zip/.exe is given in the builder.
+- Drivers are never installed silently: when a plugged-in board has no driver, the app offers the
+  bundled one (UAC prompt). Without a bundled CH340 driver it only tells the user to install
+  CH341SER.EXE from wch.cn (Windows Update often installs one when online).
 
 ## Tech stack (do not change without asking)
 
