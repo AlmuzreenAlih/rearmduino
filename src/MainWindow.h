@@ -197,6 +197,10 @@ private:
     QTimer *m_portWatch = nullptr;    // local port check (no arduino-cli), every second
     int m_portWasPresent = -1;        // last state of the selected port: -1 unknown, 0/1
     bool m_serialHiddenByUnplug = false;   // reopen the monitor when the port comes back
+    QStringList m_seenPorts;          // port names at the last check, to spot new ones
+    bool m_seenPortsValid = false;
+    QString m_newPort;                // newly connected port to select after the next scan
+    int m_newPortTries = 0;
 
     // Preferences
     qreal m_editorPointSize = 11;

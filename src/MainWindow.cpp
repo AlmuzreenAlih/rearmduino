@@ -1033,7 +1033,29 @@ void MainWindow::onPortsScanned(const QJsonObject &json)
     }
     updatePortStatus();
 
-    if (selectIndex < 0 && recognised == 1) {
+    // A port appeared while the selected one was disconnected (or none was
+    // selected): select it. Only select; the Serial Monitor stays closed, since
+    // another program may want that port.
+    int newIndex = -1;
+    if (!m_newPort.isEmpty()) {
+        for (int i = 0; i < m_portCombo->count(); ++i) {
+            const QString address = m_portCombo->itemData(i, PortAddressRole).toString();
+            if (address == m_newPort || address == QStringLiteral("/dev/") + m_newPort)
+                newIndex = i;
+        }
+        if (newIndex >= 0)
+            m_newPort.clear();
+    }
+    if (newIndex >= 0 && (selectIndex < 0 || !isPortPresent(previous))) {
+        const QString label = m_portCombo->itemData(newIndex, PortLabelRole).toString();
+        m_portCombo->setCurrentIndex(newIndex);
+        onPortActivated(newIndex);
+        appendLog(previous.isEmpty()
+                      ? tr("Selected the newly connected port %1.").arg(label)
+                      : tr("%1 is disconnected: selected the newly connected port %2. "
+                           "The Serial Monitor was not opened.").arg(previous, label),
+                  Theme::LogKind::Warning);
+    } else if (selectIndex < 0 && recognised == 1) {
         // Nothing (still) selected and exactly one board connected: pick it.
         m_portCombo->setCurrentIndex(autoIndex);
         onPortActivated(autoIndex);
@@ -1084,6 +1106,34 @@ void MainWindow::updatePortStatus()
 {
     const QList<QSerialPortInfo> available = QSerialPortInfo::availablePorts();
     auto present = [&available](const QString &address) { return portIn(available, address); };
+
+    // Newly connected ports: if the selected port is disconnected (or none is
+    // selected), rescan so onPortsScanned() can select the new one. Not during an
+    // upload or a USB restart, where boards re-enumerate on purpose.
+    QStringList names;
+    for (const QSerialPortInfo &info : available)
+        names << info.portName();
+    if (m_seenPortsValid) {
+        const QString selected = currentPort();
+        const bool uploading = m_process && m_process->state() != QProcess::NotRunning;
+        if (!uploading && !m_usbRestartBusy && (selected.isEmpty() || !present(selected))) {
+            for (const QString &name : names) {
+                if (!m_seenPorts.contains(name)) {
+                    m_newPort = name;
+                    m_newPortTries = 3;
+                }
+            }
+        }
+    }
+    m_seenPorts = names;
+    m_seenPortsValid = true;
+    if (!m_newPort.isEmpty() && !m_portsProcess) {
+        if (m_newPortTries-- > 0)
+            scanPorts();
+        else
+            m_newPort.clear();   // arduino-cli does not list it
+    }
+
     for (int i = 0; i < m_portCombo->count(); ++i) {
         const QString address = m_portCombo->itemData(i, PortAddressRole).toString();
         QString label = m_portCombo->itemData(i, PortLabelRole).toString();
