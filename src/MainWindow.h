@@ -27,6 +27,7 @@ class QToolBar;
 class QsciScintilla;
 class ArduinoLexer;
 class PortComboBox;
+class Spinner;
 class SerialMonitor;
 
 class MainWindow : public QMainWindow
@@ -126,7 +127,8 @@ private:
     void onBoardsLoaded(const QJsonObject &json);
     void onPortsScanned(const QJsonObject &json);
     void startUpload();
-    void updatePortStatus();          // "(PLUGGED)" / "(DISCONNECTED)" on each port item
+    void updatePortStatus();
+    void updateResetLabel();          // "Reset Arduino" / "Reset Board"          // "(PLUGGED)" / "(DISCONNECTED)" on each port item
     bool isPortPresent(const QString &address) const;
 
     void selectBoard(const QString &fqbn, const QString &name);
@@ -165,6 +167,8 @@ private:
     QAction *m_lightThemeAction = nullptr;
     QComboBox *m_boardCombo = nullptr;
     PortComboBox *m_portCombo = nullptr;
+    Spinner *m_boardSpinner = nullptr;   // while the board list loads
+    Spinner *m_portSpinner = nullptr;    // while ports are scanned
 
     // Menus filled when opened.
     QMenu *m_recentMenu = nullptr;
@@ -190,6 +194,7 @@ private:
     bool m_uploadAfterScan = false;
     QTimer *m_portWatch = nullptr;    // local port check (no arduino-cli), every second
     int m_portWasPresent = -1;        // last state of the selected port: -1 unknown, 0/1
+    bool m_serialHiddenByUnplug = false;   // reopen the monitor when the port comes back
 
     // Preferences
     qreal m_editorPointSize = 11;

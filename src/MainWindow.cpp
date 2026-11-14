@@ -7,6 +7,7 @@
 #include "ManualControl.h"
 #include "SerialCommandGuide.h"
 #include "SerialMonitor.h"
+#include "Spinner.h"
 
 #include <Qsci/qsciscintilla.h>
 
@@ -203,6 +204,8 @@ void MainWindow::setupToolbar()
     boardLabel->setContentsMargins(12, 0, 0, 0);
     toolbar->addWidget(boardLabel);
     m_boardCombo = new BoardComboBox;   // dropdown with a search field
+    m_boardCombo->setObjectName(QStringLiteral("boardCombo"));
+    m_boardSpinner = new Spinner(m_boardCombo);
     m_boardCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     // Narrow enough that the whole toolbar (incl. Serial) fits ~850 px, as on the
     // Pi; the popup still widens to fit long board names.
@@ -217,12 +220,15 @@ void MainWindow::setupToolbar()
         QSettings s;
         s.setValue(QStringLiteral("board/fqbn"), currentFqbn());
         s.setValue(QStringLiteral("board/name"), m_boardCombo->currentText());
+        updateResetLabel();
     });
     toolbar->addWidget(m_boardCombo);
 
     // Port: remembered port only; rescanned each time the dropdown opens.
     toolbar->addWidget(new QLabel(tr("Port")));
     m_portCombo = new PortComboBox;
+    m_portCombo->setObjectName(QStringLiteral("portCombo"));
+    m_portSpinner = new Spinner(m_portCombo);
     m_portCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     m_portCombo->setMinimumContentsLength(20);   // room for "COM3 (DISCONNECTED)"
     m_portCombo->setToolTip(tr("Open to scan for connected boards"));
@@ -244,9 +250,11 @@ void MainWindow::setupToolbar()
         if (index < 0)
             return;
         m_portWasPresent = -1;   // a different port: don't report its state as a change
+        m_serialHiddenByUnplug = false;
         QSettings().setValue(QStringLiteral("port/address"), currentPort());
         if (m_serial)
             m_serial->setPortName(currentPort());   // follows the toolbar; reopens if open
+        updateResetLabel();
     });
     toolbar->addWidget(m_portCombo);
 
@@ -354,6 +362,8 @@ QString MainWindow::manualSend(const QByteArray &data, const QString &label)
         error = tr("upload in progress");
     else if (currentPort().isEmpty())
         error = tr("no port selected (choose one in the toolbar)");
+    else if (!isPortPresent(currentPort()))
+        error = tr("%1 is disconnected (plug the board in)").arg(currentPort());
     if (error.isEmpty() && (!m_serial || !m_serial->isOpen())) {
         // Opening the port resets most boards (DTR), and bytes that arrive while
         // the bootloader runs can keep the sketch from starting. So this press
@@ -753,6 +763,17 @@ void MainWindow::onProcessError(QProcess::ProcessError error)
 
 void MainWindow::toggleSerialMonitor(bool show)
 {
+    if (show && !isPortPresent(currentPort())) {
+        // Nothing to talk to: keep the monitor hidden.
+        const QSignalBlocker blocker(m_serialAction);
+        m_serialAction->setChecked(false);
+        const QString why = currentPort().isEmpty()
+            ? tr("Serial Monitor: no board connected. Plug one in and choose its port.")
+            : tr("Serial Monitor: %1 is disconnected. Plug the board in first.").arg(currentPort());
+        appendLog(why, Theme::LogKind::Warning);
+        statusBar()->showMessage(why, 5000);
+        return;
+    }
     if (show && !m_serial) {
         // Created lazily on first open (CLAUDE.md startup rule).
         m_serial = new SerialMonitor;
@@ -763,6 +784,7 @@ void MainWindow::toggleSerialMonitor(bool show)
             appendLog(text, isError ? Theme::LogKind::Error : Theme::LogKind::Command);
         });
         connect(m_serial, &SerialMonitor::portStuck, this, &MainWindow::offerUsbRestart);
+        updateResetLabel();
         m_serial->setStyleSheet(Theme::styleSheet(m_theme));
         m_serial->setTheme(m_theme);
         const int total = m_topSplitter->width();
@@ -855,9 +877,10 @@ void MainWindow::loadBoards()
 {
     if (m_boardsProcess)
         return;
+    m_boardSpinner->start();
     m_boardsProcess = startCliJson({QStringLiteral("core"), QStringLiteral("list")},
         [this](const QJsonObject &json) { onBoardsLoaded(json); },
-        [this] { m_boardsProcess = nullptr; });
+        [this] { m_boardsProcess = nullptr; m_boardSpinner->stop(); });
 }
 
 void MainWindow::onBoardsLoaded(const QJsonObject &json)
@@ -933,10 +956,12 @@ void MainWindow::scanPorts()
     if (m_portsProcess)
         return;
     statusBar()->showMessage(tr("Scanning ports..."));
+    m_portSpinner->start();
     m_portsProcess = startCliJson({QStringLiteral("board"), QStringLiteral("list")},
         [this](const QJsonObject &json) { onPortsScanned(json); },
         [this] {
             m_portsProcess = nullptr;
+            m_portSpinner->stop();
             if (m_portMenu && m_portMenu->isVisible())
                 populatePortMenu();   // Tools > Port is open: show the fresh list
             if (m_uploadAfterScan) {
@@ -1038,6 +1063,21 @@ bool MainWindow::isPortPresent(const QString &address) const
     return portIn(QSerialPortInfo::availablePorts(), address);
 }
 
+// Arduino boards (an arduino:... board selected, or Arduino's USB IDs on the port)
+// get "Reset Arduino"; others (ESP32, ...) "Reset Board".
+void MainWindow::updateResetLabel()
+{
+    if (!m_serial)
+        return;
+    bool arduino = currentFqbn().startsWith(QLatin1String("arduino:"));
+    for (const QSerialPortInfo &info : QSerialPortInfo::availablePorts()) {
+        if (info.hasVendorIdentifier() && portIn({info}, currentPort())
+            && (info.vendorIdentifier() == 0x2341 || info.vendorIdentifier() == 0x2A03))
+            arduino = true;
+    }
+    m_serial->setBoardIsArduino(arduino);
+}
+
 // Port items read "COM3 (PLUGGED) - Arduino Mega or Mega 2560" or "COM3 (DISCONNECTED)".
 void MainWindow::updatePortStatus()
 {
@@ -1058,9 +1098,22 @@ void MainWindow::updatePortStatus()
 
         if (i == m_portCombo->currentIndex()) {
             const int state = here ? 1 : 0;
-            if (m_portWasPresent >= 0 && state != m_portWasPresent)
+            if (m_portWasPresent >= 0 && state != m_portWasPresent) {
                 statusBar()->showMessage(here ? tr("%1 plugged in").arg(label)
                                               : tr("%1 disconnected").arg(label), 5000);
+                // No board, no monitor; it comes back when the board is plugged in again.
+                // (Not during an upload: native-USB boards drop off the bus while flashing.)
+                const bool uploading = m_process && m_process->state() != QProcess::NotRunning;
+                if (!here && !uploading && m_serialAction->isChecked()) {
+                    m_serialHiddenByUnplug = true;
+                    m_serialAction->setChecked(false);
+                    appendLog(tr("Serial Monitor hidden: %1 was unplugged. It reopens when the board is back.").arg(label),
+                              Theme::LogKind::Warning);
+                } else if (here && m_serialHiddenByUnplug) {
+                    m_serialHiddenByUnplug = false;
+                    m_serialAction->setChecked(true);
+                }
+            }
             m_portWasPresent = state;
             m_portCombo->setToolTip(here ? tr("%1 is plugged in. Open to rescan.").arg(label)
                                          : tr("%1 is disconnected. Plug the board in, or open to rescan.").arg(label));
@@ -1125,6 +1178,8 @@ void MainWindow::applyTheme(Theme::Mode mode)
         m_serial->setTheme(mode);
     m_serialAction->setIcon(Theme::svgIcon(QStringLiteral(":/icons/serial.svg"), c.text));
     m_portCombo->setStatusColors(c.success, c.warning);   // (PLUGGED) green, (DISCONNECTED) amber
+    m_boardSpinner->setColors(c.primary, c.editorBg);
+    m_portSpinner->setColors(c.primary, c.editorBg);
 
     m_verifyAction->setIcon(Theme::svgIcon(QStringLiteral(":/icons/verify.svg"), c.onSecondary));
     m_uploadAction->setIcon(Theme::svgIcon(QStringLiteral(":/icons/upload.svg"), c.onPrimary));

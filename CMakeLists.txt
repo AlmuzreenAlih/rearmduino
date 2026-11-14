@@ -51,6 +51,8 @@ add_executable(myide WIN32
     src/BoardComboBox.h
     src/Theme.cpp
     src/Theme.h
+    src/Spinner.cpp
+    src/Spinner.h
     src/SerialMonitor.cpp
     src/SerialMonitor.h
     src/ManualControl.cpp

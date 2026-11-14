@@ -38,6 +38,8 @@ public:
     QString writeRaw(const QByteArray &data);   // error text, empty on success
     // Puts "Sent: <text>" in the received view, on its own line (Sent color).
     void showSent(const QString &text);
+    // Reset button text: "Reset Arduino" for Arduino boards, else "Reset Board".
+    void setBoardIsArduino(bool arduino);
 
 signals:
     void sent(const QString &text);          // text as typed, without line ending
@@ -58,6 +60,7 @@ private slots:
 private:
     void updateHeader();
     void checkWriteStuck();
+    void insertLine(const QString &text, Theme::LogKind kind, int state);   // colored line in the view
 
     QSerialPort *m_port = nullptr;
     QString m_portName;
@@ -72,6 +75,7 @@ private:
     QToolButton *m_resetButton = nullptr;
     QTimer *m_writeCheck = nullptr;   // data not leaving after a write: board stuck?
     bool m_stuckReported = false;     // once per open
+    bool m_boardIsArduino = true;
     bool m_atLineStart = true;   // next received char starts a line (timestamp goes here)
     Theme::Mode m_mode = Theme::Mode::Dark;
 

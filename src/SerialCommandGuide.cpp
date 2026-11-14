@@ -3,6 +3,7 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QCursor>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -27,6 +28,31 @@
 
 namespace {
 const char kFileName[] = "serial-commands.json";
+
+// A command row; its Edit/Delete buttons show only while the mouse is over it.
+class HoverRow : public QWidget
+{
+public:
+    QList<QWidget *> hoverOnly;
+
+    void setHover(bool on)
+    {
+        for (QWidget *w : hoverOnly)
+            w->setVisible(on);
+    }
+
+protected:
+    void enterEvent(QEvent *event) override
+    {
+        setHover(true);
+        QWidget::enterEvent(event);
+    }
+    void leaveEvent(QEvent *event) override
+    {
+        setHover(false);
+        QWidget::leaveEvent(event);
+    }
+};
 
 // JSON string literal (quotes and escapes) for the hand-formatted file.
 QString quoted(const QString &s)
@@ -190,7 +216,9 @@ void SerialCommandGuide::rebuild()
     const QFont mono = Theme::monoFont(10);
     for (int i = 0; i < m_commands.size(); ++i) {
         // [command] - name
-        auto *row = new QWidget;
+        auto *row = new HoverRow;
+        row->setObjectName(QStringLiteral("commandRow"));
+        row->setAttribute(Qt::WA_StyledBackground);   // hover highlight from the stylesheet
         row->setContextMenuPolicy(Qt::CustomContextMenu);
         auto *rowLayout = new QHBoxLayout(row);
         rowLayout->setContentsMargins(0, 0, 0, 0);
@@ -201,7 +229,7 @@ void SerialCommandGuide::rebuild()
         button->setAutoDefault(false);
         button->setCursor(Qt::PointingHandCursor);
         button->setContextMenuPolicy(Qt::CustomContextMenu);
-        button->setToolTip(tr("Click to send \"%1\" to the serial port.\nRight-click to edit, move, copy or delete.")
+        button->setToolTip(tr("Click to send \"%1\" to the serial port.\nRight-click to copy or move it.")
                                .arg(m_commands[i].command));
         connect(button, &QPushButton::clicked, this, [this, i] { sendCommand(i); });
         connect(button, &QPushButton::customContextMenuRequested, this, [this, button, i](const QPoint &pos) {
@@ -212,9 +240,40 @@ void SerialCommandGuide::rebuild()
         });
         auto *name = new QLabel(QStringLiteral("- ") + m_commands[i].name);
         name->setObjectName(QStringLiteral("commandName"));
+        // Edit / Delete, shown on hover (space kept so the row doesn't shift).
+        auto *edit = new QToolButton;
+        edit->setObjectName(QStringLiteral("rowEdit"));
+        edit->setText(tr("Edit"));
+        edit->setToolTip(tr("Edit this command"));
+        auto *del = new QToolButton;
+        del->setObjectName(QStringLiteral("rowDelete"));
+        del->setText(tr("Delete"));
+        del->setToolTip(tr("Delete this command"));
+        for (QToolButton *b : {edit, del}) {
+            b->setCursor(Qt::PointingHandCursor);
+            b->setEnabled(m_loadError.isEmpty());
+            QSizePolicy policy = b->sizePolicy();
+            policy.setRetainSizeWhenHidden(true);
+            b->setSizePolicy(policy);
+            b->hide();
+            row->hoverOnly.append(b);
+        }
+        // Deferred: these rebuild (delete) the rows.
+        connect(edit, &QToolButton::clicked, this, [this, i] {
+            QTimer::singleShot(0, this, [this, i] { editCommand(i); });
+        });
+        connect(del, &QToolButton::clicked, this, [this, i] {
+            QTimer::singleShot(0, this, [this, i] { removeCommand(i); });
+        });
         rowLayout->addWidget(button);
-        rowLayout->addWidget(name, 1);
+        rowLayout->addWidget(name);
+        rowLayout->addSpacing(8);
+        rowLayout->addWidget(edit);
+        rowLayout->addWidget(del);
+        rowLayout->addStretch(1);
         m_rows->addWidget(row);
+        // Rebuilt under the mouse (after an edit): no Enter event comes, so check now.
+        QTimer::singleShot(0, row, [row] { row->setHover(row->rect().contains(row->mapFromGlobal(QCursor::pos()))); });
     }
     m_rows->addStretch(1);
 }

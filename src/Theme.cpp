@@ -242,6 +242,7 @@ QComboBox {
     border-radius: 6px;
     padding: 5px 10px;
 }
+QComboBox#boardCombo, QComboBox#portCombo { border-radius: 0; }
 QComboBox:hover { border-color: @muted@; }
 QComboBox:focus, QComboBox:on { border-color: @primary@; }
 QComboBox::drop-down { border: none; width: 24px; }
@@ -275,7 +276,7 @@ QListView#boardList {
     background: @editorBg@;
     color: @text@;
     border: 1px solid @border@;
-    border-radius: 4px;
+    border-radius: 0;
     outline: 0;
 }
 QListView#boardList::item { padding: 4px 8px; }
@@ -356,6 +357,17 @@ QPushButton#commandButton {
 QPushButton#commandButton:hover { border-color: @secondary@; }
 QPushButton#commandButton:pressed { background: @secondary@; color: @onSecondary@; border-color: @secondary@; }
 QLabel#commandName { color: @text@; }
+QWidget#commandRow { border-radius: 6px; }
+QWidget#commandRow:hover { background: @window@; }
+QToolButton#rowEdit, QToolButton#rowDelete {
+    background: transparent;
+    color: @muted@;
+    border: 1px solid @border@;
+    border-radius: 4px;
+    padding: 2px 10px;
+}
+QToolButton#rowEdit:hover { color: @text@; border-color: @secondary@; }
+QToolButton#rowDelete:hover { color: @error@; border-color: @error@; }
 QWidget#manualSeparator { background: @border@; }
 QScrollArea#manualScroll { background: transparent; border: none; }
 QLabel#manualTitle { color: @muted@; font-weight: 600; }

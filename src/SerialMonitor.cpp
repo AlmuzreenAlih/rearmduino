@@ -24,6 +24,7 @@ constexpr int kDefaultBaud = 9600;
 constexpr int kFlushIntervalMs = 30;
 constexpr int kMaxLines = 5000;
 constexpr int kSentState = 1;   // QTextBlock user state of a "Sent:" line
+constexpr int kNoteState = 2;   // ... of a note such as "Arduino reset"
 }
 
 SerialMonitor::SerialMonitor(QWidget *parent)
@@ -98,7 +99,7 @@ SerialMonitor::SerialMonitor(QWidget *parent)
     // port is stuck, MainWindow offers to restart the USB device (portStuck).
     m_resetButton = new QToolButton;
     m_resetButton->setObjectName(QStringLiteral("resetButton"));
-    m_resetButton->setText(tr("Reset"));
+    m_resetButton->setText(tr("Reset Arduino"));
     m_resetButton->setToolTip(tr("Reset the board (restarts the sketch).\n"
                                  "If the port is stuck or \"busy\", offers to restart its USB device,\n"
                                  "like unplugging the board and plugging it back in."));
@@ -324,7 +325,9 @@ void SerialMonitor::resetBoard()
 {
     if (!isOpen()) {
         if (openPort())
-            emit message(tr("Serial Monitor: opened %1 (the board resets).").arg(m_portName), false);
+            insertLine(m_boardIsArduino ? tr("--- %1 opened, Arduino reset ---").arg(m_portName)
+                                        : tr("--- %1 opened, board reset ---").arg(m_portName),
+                       Theme::LogKind::Command, kNoteState);
         return;   // a failed open already reported (and portStuck if not "not found")
     }
     if (!m_port->setDataTerminalReady(false) || !m_port->setRequestToSend(false)) {
@@ -340,7 +343,8 @@ void SerialMonitor::resetBoard()
         m_port->setRequestToSend(true);
     });
     m_stuckReported = false;
-    emit message(tr("Serial Monitor: reset the board on %1.").arg(m_portName), false);
+    insertLine(m_boardIsArduino ? tr("--- Arduino reset ---") : tr("--- Board reset ---"),
+               Theme::LogKind::Command, kNoteState);
 }
 
 // Two seconds after a write, the data is still waiting: the board's USB chip is
@@ -367,12 +371,14 @@ void SerialMonitor::setTheme(Theme::Mode mode)
 {
     m_mode = mode;
     m_timestampButton->setIcon(Theme::svgIcon(QStringLiteral(":/icons/clock.svg"), Theme::colors(mode).text, 16));
-    // Recolor the "Sent:" lines (marked with block state kSentState).
-    QTextCharFormat format;
-    format.setForeground(Theme::logColor(Theme::LogKind::Sent, mode));
+    // Recolor the "Sent:" lines and notes (marked with their block state).
+    QTextCharFormat sentFormat, noteFormat;
+    sentFormat.setForeground(Theme::logColor(Theme::LogKind::Sent, mode));
+    noteFormat.setForeground(Theme::logColor(Theme::LogKind::Command, mode));
     for (QTextBlock b = m_view->document()->begin(); b.isValid(); b = b.next()) {
-        if (b.userState() != kSentState)
+        if (b.userState() != kSentState && b.userState() != kNoteState)
             continue;
+        const QTextCharFormat &format = b.userState() == kSentState ? sentFormat : noteFormat;
         QTextCursor c(b);
         c.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
         c.setCharFormat(format);
@@ -381,20 +387,32 @@ void SerialMonitor::setTheme(Theme::Mode mode)
 
 void SerialMonitor::showSent(const QString &text)
 {
-    flushReceived();   // keep the order: what arrived before comes first
+    insertLine(QStringLiteral("Sent: ") + text, Theme::LogKind::Sent, kSentState);
+}
+
+void SerialMonitor::setBoardIsArduino(bool arduino)
+{
+    m_boardIsArduino = arduino;
+    m_resetButton->setText(arduino ? tr("Reset Arduino") : tr("Reset Board"));
+}
+
+void SerialMonitor::insertLine(const QString &text, Theme::LogKind kind, int state)
+{
+    onReadyRead();     // keep the order: what arrived before comes first
+    flushReceived();
     QTextCursor cursor(m_view->document());
     cursor.movePosition(QTextCursor::End);
     if (!m_atLineStart)
         cursor.insertText(QStringLiteral("\n"), QTextCharFormat());   // a reply still on its line
     QTextCharFormat format;
-    format.setForeground(Theme::logColor(Theme::LogKind::Sent, m_mode));
+    format.setForeground(Theme::logColor(kind, m_mode));
     const QString stamp = m_timestampButton->isChecked()
                               ? QTime::currentTime().toString(QStringLiteral("HH:mm:ss.zzz -> ")) : QString();
-    cursor.insertText(stamp + QStringLiteral("Sent: ") + text, format);
-    cursor.block().setUserState(kSentState);
+    cursor.insertText(stamp + text, format);
+    cursor.block().setUserState(state);
     cursor.insertText(QStringLiteral("\n"), QTextCharFormat());
     m_atLineStart = true;
-    m_view->verticalScrollBar()->setValue(m_view->verticalScrollBar()->maximum());   // just sent: show it
+    m_view->verticalScrollBar()->setValue(m_view->verticalScrollBar()->maximum());   // just added: show it
 }
 
 void SerialMonitor::updateHeader()

@@ -261,11 +261,19 @@ void MainWindow::populateRecentMenu()
 {
     clearMenu(m_recentMenu);
     const QStringList recent = QSettings().value(QStringLiteral("recent/sketches")).toStringList();
+    // Sketches with the same name in different folders: add the parent folder's name.
+    QHash<QString, int> nameCount;
+    for (const QString &dir : recent)
+        ++nameCount[QFileInfo(dir).fileName().toLower()];
     int shown = 0;
     for (const QString &dir : recent) {
         if (!QFileInfo(dir).isDir())
             continue;
-        QAction *a = m_recentMenu->addAction(QFileInfo(dir).fileName());
+        const QFileInfo info(dir);
+        QString text = info.fileName();
+        if (nameCount.value(text.toLower()) > 1)
+            text += QStringLiteral("  (%1)").arg(QFileInfo(info.absolutePath()).fileName());
+        QAction *a = m_recentMenu->addAction(text);
         a->setToolTip(QDir::toNativeSeparators(dir));
         a->setStatusTip(QDir::toNativeSeparators(dir));
         connect(a, &QAction::triggered, this, [this, dir] {
