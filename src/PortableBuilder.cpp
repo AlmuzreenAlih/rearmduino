@@ -1,5 +1,8 @@
 #include "PortableBuilder.h"
 #include "Portable.h"
+#ifdef Q_OS_WIN
+#include "Activation.h"
+#endif
 #include "Theme.h"
 
 #include <QCheckBox>
@@ -30,6 +33,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTextStream>
+#include <QUuid>
 #include <QThread>
 #include <QVBoxLayout>
 
@@ -105,6 +109,7 @@ struct PortableBuilder::Job {
     QString target;     // <out>/<name>
     QString zipPath;    // empty: no zip
     QString ch340;      // folder, .zip or .exe; empty: none
+    QString copyName;   // who the copy is for
     QList<CopyItem> items;
 };
 
@@ -142,6 +147,9 @@ PortableBuilder::PortableBuilder(const QString &cliPath, const QProcessEnvironme
     form->addRow(tr("Save in"), outRow);
     m_name = new QLineEdit(s.value(QStringLiteral("portable/name"), QStringLiteral("REARMduino-portable")).toString());
     form->addRow(tr("Folder name"), m_name);
+    m_copyName = new QLineEdit;
+    m_copyName->setPlaceholderText(tr("Who this copy is for, e.g. Juan's laptop (shown when it asks for approval)"));
+    form->addRow(tr("Copy name"), m_copyName);
 
     auto *chRow = new QHBoxLayout;
     m_ch340 = new QLineEdit(s.value(QStringLiteral("portable/ch340")).toString());
@@ -362,6 +370,7 @@ void PortableBuilder::build()
     job.target = QDir(outDir).filePath(name);
     job.zipPath = m_zip->isChecked() ? job.target + QStringLiteral(".zip") : QString();
     job.ch340 = ch340;
+    job.copyName = m_copyName->text().trimmed().isEmpty() ? name : m_copyName->text().trimmed();
 
     if (QDir::toNativeSeparators(job.target).size() > Portable::kMaxFolderPath
         && QMessageBox::question(this, windowTitle(),
@@ -573,6 +582,8 @@ void PortableBuilder::build()
             "REARMduino portable version\r\n"
             "===========================\r\n\r\n"
             "Start: double-click REARMduino.exe. Nothing needs to be installed.\r\n"
+            "The first start on a PC shows a request code: send it to REARM Automation to have this\r\n"
+            "PC approved (needs internet that one time). After that it also works offline.\r\n"
             "Keep this folder together (do not move REARMduino.exe out of it), somewhere you can write\r\n"
             "(e.g. Desktop or Documents, not Program Files), with a short path: compiling fails if\r\n"
             "the folder's path is longer than about 100 characters (a Windows limit).\r\n\r\n"
@@ -582,6 +593,19 @@ void PortableBuilder::build()
             "plugged-in board has none (Windows asks for administrator permission).\r\n\r\n"
             "This file switches on portable mode; do not delete it.\r\n");
         marker.close();
+
+#ifdef Q_OS_WIN
+        // This copy's identity for activation (Activation.h): a fresh random ID and its name.
+        // A license is never copied: settings/ is not among the copied items.
+        QFile copyFile(QDir(job.target).filePath(Activation::copyFileName()));
+        if (!copyFile.open(QIODevice::WriteOnly))
+            return fail(tr("Could not write %1").arg(Activation::copyFileName()));
+        copyFile.write(QJsonDocument(QJsonObject{
+            {QStringLiteral("copyId"), QUuid::createUuid().toString(QUuid::WithoutBraces)},
+            {QStringLiteral("copyName"), job.copyName},
+        }).toJson());
+        copyFile.close();
+#endif
 
         if (!job.zipPath.isEmpty()) {
             say(tr("Zipping..."));

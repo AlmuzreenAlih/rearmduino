@@ -164,6 +164,11 @@ MainWindow::MainWindow(const QString &sketchPath, QWidget *parent)
     // A board without a driver (e.g. a CH340 clone on a fresh PC): offer the bundled one.
     if (UsbDrivers::supported())
         QTimer::singleShot(3000, this, [this] { checkUsbDrivers(false); });
+#ifdef MYIDE_ACTIVATION
+    // Tells the server this copy was used and learns if this PC was revoked. In the background,
+    // well after the window is up; offline it does nothing.
+    QTimer::singleShot(5000, this, &MainWindow::checkActivation);
+#endif
 }
 
 MainWindow::~MainWindow()

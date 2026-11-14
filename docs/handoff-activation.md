@@ -22,7 +22,18 @@ Read `CLAUDE.md` first (project rules), then this.
   private key is in the git-ignored local `webserviceapp2/projects/rearm/.env`
   (`IDE_LICENSE_PRIVATE_KEY`), so the local backend signs with the real key; the same line goes in
   the server `.env` at step 4. The user must keep a backup of it.
-- Next: step 3 (app).
+- **Step 3 (app) done, 2026-11-14**: `src/Activation.*`, `src/ActivationWindow.*`, gate in `main.cpp`,
+  revoke flow in `MainWindowMenus.cpp`, `copy.json` + "Copy name" field in the portable builder,
+  CLAUDE.md section. Tested with a scratch Release build against the local backend
+  (`-DMYIDE_ACTIVATION_URL=http://127.0.0.1:3099`): waiting window offline, pending, approve ->
+  main window opens, offline start with a license, license for another machine / tampered license
+  rejected, revoke with and without unsaved changes. Not exercised: running the portable builder
+  to the end (copy.json writing), and Save / Save As inside the revoke prompt.
+  Settled: copy ID lives in `copy.json`; the waiting window also re-checks every minute.
+- **Do not rebuild `build-win-Release` before step 4+5 are done**: a new Release build shows the
+  waiting window until the live server has the endpoint and this PC is approved there. Use the
+  Debug build (no check) meanwhile.
+- Next: step 4 (deploy; ask first).
 
 ## Where the app stands
 

@@ -1,5 +1,9 @@
 #include "MainWindow.h"
 #include "Portable.h"
+#ifdef MYIDE_ACTIVATION
+#include "Activation.h"
+#include "ActivationWindow.h"
+#endif
 
 #include <QApplication>
 #include <QFont>
@@ -31,6 +35,18 @@ int main(int argc, char *argv[])
     for (int size : {16, 32, 48, 64, 128, 256})
         appIcon.addFile(QStringLiteral(":/app/rearmduino-%1.png").arg(size), QSize(size, size));
     QApplication::setWindowIcon(appIcon);
+
+#ifdef MYIDE_ACTIVATION
+    // Windows Release builds run only on PCs the developer approved (Activation.h). The saved
+    // license is checked locally, so an approved PC starts as fast as before; without one, the
+    // waiting window is shown instead of the main window.
+    if (!Activation::hasValidLicense()) {
+        ActivationWindow waiting;
+        if (waiting.exec() != QDialog::Accepted)
+            return 0;
+    }
+    Activation::noteStart();
+#endif
 
     // Optional first argument: a sketch folder or .ino file.
     const QStringList args = QApplication::arguments();

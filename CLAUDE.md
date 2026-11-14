@@ -23,6 +23,27 @@ Startup speed is the top priority: the main window must appear almost instantly,
   bundled one (UAC prompt). Without a bundled CH340 driver it only tells the user to install
   CH341SER.EXE from wch.cn (Windows Update often installs one when online).
 
+## Machine activation (Windows Release builds)
+
+- Every Windows **Release** build (portable or not, including the developer's own) runs only on a
+  PC the developer approved. Debug builds and Linux/the Pi have no check. CMake defines
+  `MYIDE_ACTIVATION` for Release only; the code is `src/Activation.*` and `src/ActivationWindow.*`.
+- Start: the saved license (QSettings `activation/license`) is verified locally: ECDSA P-256
+  signature (Windows CNG, public key in `src/ActivationKey.h`) + this PC's machine hash. No network.
+  Valid: the main window opens as usual. Not valid: a small waiting window shows the request code
+  and asks the server (and again every minute) until the PC is approved.
+- 5 seconds after the main window appears, a background thread (WinHTTP) tells the server the copy
+  was used and learns if the PC was revoked. Revoked: warn, Save/Discard, delete the license, close.
+  Offline: nothing happens; an approved PC works offline forever.
+- Server: `rearm.webserviceapp.online/api/ide/check`, in the repo
+  `C:\SirAlih\Projects\htdocs\webserviceapp2` (`projects/rearm`; wire format in its
+  `src/routes/README.md`). Approve or revoke by editing `ide_machines.status` in Adminer.
+  `-DMYIDE_ACTIVATION_URL=http://127.0.0.1:<port>` builds a copy that talks to a local backend.
+- The portable builder writes `copy.json` (random copy ID + the copy name typed in the builder).
+  It must never copy `settings/` (that would copy a license).
+- No new libraries for this: CNG (`bcrypt`) and WinHTTP are part of Windows.
+- Threat model: casual copying only. Don't add obfuscation or anti-tamper code.
+
 ## Tech stack (do not change without asking)
 
 - Language: C++17
@@ -137,6 +158,9 @@ for fills and borders there, never for text (poor contrast on white).
 - Show the main window first; load everything else lazily (board list, port scan, library index).
 - No network calls at startup. Approved exception: one `arduino-cli board list` port scan
   3 seconds after the window appears (it may contact Arduino's servers to identify boards).
+- Approved exception: machine activation (see "Machine activation"). With a valid license the only
+  call is one background check 5 seconds after the window appears; without one, the waiting window
+  calls the server instead of opening the main window.
 - Keep dependencies minimal; don't add a new library without asking.
 
 ## Workflow

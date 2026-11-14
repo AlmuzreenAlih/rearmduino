@@ -51,6 +51,7 @@ private:
 
     QLineEdit *m_outDir = nullptr;
     QLineEdit *m_name = nullptr;
+    QLineEdit *m_copyName = nullptr;   // who the copy is for (shown in the approval list)
     QListWidget *m_libs = nullptr;
     QLabel *m_libCount = nullptr;
     QLineEdit *m_ch340 = nullptr;

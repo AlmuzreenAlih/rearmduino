@@ -69,6 +69,20 @@ add_executable(myide WIN32
 )
 if(WIN32)
     target_sources(myide PRIVATE resources/app/rearmduino.rc)   # .exe icon in Explorer/taskbar
+    # Machine activation (docs/handoff-activation.md). Compiled in every Windows build, but only
+    # Release builds check it (MYIDE_ACTIVATION); Debug builds and Linux run without approval.
+    target_sources(myide PRIVATE
+        src/Activation.cpp
+        src/Activation.h
+        src/ActivationKey.h
+        src/ActivationWindow.cpp
+        src/ActivationWindow.h
+    )
+    set(MYIDE_ACTIVATION_URL "https://rearm.webserviceapp.online" CACHE STRING
+        "Activation server (no trailing slash); override only to test against a local backend")
+    target_compile_definitions(myide PRIVATE
+        MYIDE_ACTIVATION_URL="${MYIDE_ACTIVATION_URL}"
+        $<$<CONFIG:Release>:MYIDE_ACTIVATION>)
 endif()
 # The program file is REARMduino(.exe); the CMake target stays "myide".
 set_target_properties(myide PROPERTIES OUTPUT_NAME REARMduino)
@@ -86,6 +100,8 @@ if(WIN32)
     target_compile_definitions(myide PRIVATE QSCINTILLA_DLL)  # dllimport QScintilla symbols
     # USB driver check (UsbDrivers.cpp): Windows system libraries, not extra dependencies.
     target_link_libraries(myide PRIVATE setupapi cfgmgr32 version)
+    # Activation: license signature check (CNG) and HTTPS (WinHTTP), both part of Windows.
+    target_link_libraries(myide PRIVATE bcrypt winhttp)
 endif()
 if(MSVC)
     target_compile_options(myide PRIVATE /utf-8)   # sources are UTF-8 (default is the ANSI code page)

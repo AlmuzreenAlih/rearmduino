@@ -102,6 +102,10 @@ private:
 
     // Sketch files (MainWindowMenus.cpp)
     bool maybeSave();
+#ifdef MYIDE_ACTIVATION
+    void checkActivation();    // a few seconds after startup, in the background
+    void activationRevoked();  // warn, offer to save, close
+#endif
     void openSketchPath(const QString &path, bool isTemp);
     void openExample(const QString &exampleDir);
     void addRecent(const QString &sketchDir);
@@ -213,4 +217,5 @@ private:
     QString m_sketchDir;   // folder passed to arduino-cli
     QString m_sketchFile;  // <dir>/<dirname>.ino
     bool m_sketchIsTemp = false;   // untitled or example copy: Save goes to Save As
+    bool m_forceClose = false;     // closing after a revoked activation: saving was already offered
 };

@@ -12,6 +12,9 @@
 #include "SerialMonitor.h"
 #include "PortComboBox.h"
 #include "SettingsDialogs.h"
+#ifdef MYIDE_ACTIVATION
+#include "Activation.h"
+#endif
 
 #include <Qsci/qscicommand.h>
 #include <Qsci/qscicommandset.h>
@@ -623,11 +626,44 @@ bool MainWindow::maybeSave()
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-    if (maybeSave())
+    if (m_forceClose || maybeSave())
         event->accept();
     else
         event->ignore();
 }
+
+#ifdef MYIDE_ACTIVATION
+void MainWindow::checkActivation()
+{
+    Activation::check(this, [this](const Activation::Result &result) {
+        // Only a clear "not approved" from the server revokes; no connection or a server
+        // problem changes nothing.
+        if (result.status == Activation::Status::NotApproved)
+            activationRevoked();
+    });
+}
+
+void MainWindow::activationRevoked()
+{
+    Activation::clearLicense();   // first, so ending the process during the prompts doesn't keep it
+    QMessageBox::warning(this, QStringLiteral("REARMduino"),
+                         anyModified() ? tr("This copy of REARMduino is no longer approved on this PC, so it will close. "
+                                            "You can save your changes first.")
+                                       : tr("This copy of REARMduino is no longer approved on this PC, so it will close."));
+    // Save or Discard, no Cancel; asked again if saving didn't happen (e.g. Save As was cancelled).
+    while (anyModified()) {
+        const auto answer = QMessageBox::question(
+            this, tr("Save changes?"),
+            tr("Do you want to save changes to \"%1\"?").arg(QFileInfo(m_sketchFile).completeBaseName()),
+            QMessageBox::Save | QMessageBox::Discard, QMessageBox::Save);
+        if (answer == QMessageBox::Discard || save())
+            break;
+    }
+    m_forceClose = true;
+    close();
+    QCoreApplication::quit();
+}
+#endif
 
 void MainWindow::openSketchPath(const QString &path, bool isTemp)
 {
