@@ -1,7 +1,24 @@
-# Handoff: machine activation for REARMduino (planned, not started)
+# Handoff: machine activation for REARMduino (in progress)
 
 Written 2026-11-14 at the end of a long session, so a new conversation can pick this up.
-Nothing in this plan is implemented yet. Read `CLAUDE.md` first (project rules), then this.
+Read `CLAUDE.md` first (project rules), then this.
+
+## Progress
+
+- **Step 1 (backend) done, 2026-11-14**: webserviceapp2 commit `7bbc531` (local only, **not pushed**:
+  a push deploys). Migration 016 applied to the local DB; tested end to end against a local server
+  with a throwaway key. The exact wire format the app must follow is in that repo's
+  `projects/rearm/src/routes/README.md` ("REARMduino activation"); summary:
+  - `POST /api/ide/check` JSON `{machine, copyId, copyName, pcName, winUser, appVersion, lastUsedAt, runCount}`
+    → `{status:"approved", requestCode, license}` or `{status:"pending", requestCode}` (pending, denied
+    and revoked all answer "pending"; with a license held, "pending" = revoked). `503` = server has no key.
+  - License `base64url(payload) + "." + base64url(signature)`; payload JSON
+    `{"v":1,"machine","copyId","issuedAt"}`; signature ECDSA P-256 / SHA-256, raw r||s 64 bytes
+    (what `BCryptVerifySignature` takes). Verify over the payload bytes as received, then parse.
+  - Request code (settled): first 10 hex chars (40 bits) of the machine hash, as 8 Crockford base32
+    chars `0123456789ABCDEFGHJKMNPQRSTVWXYZ`, most significant first, shown `XXXX-XXXX`.
+  - Machine hash: lowercase hex SHA-256, 64 chars (server rejects anything else).
+- Next: step 2 (key pair).
 
 ## Where the app stands
 
