@@ -1,6 +1,8 @@
 #include "PortComboBox.h"
+#include "Spinner.h"
 
 #include <QApplication>
+#include <QListView>
 #include <QPainter>
 #include <QStyledItemDelegate>
 #include <QStylePainter>
@@ -74,10 +76,39 @@ private:
 
 }
 
-PortComboBox::PortComboBox(QWidget *parent)
-    : QComboBox(parent)
+// The popup's list, with an optional empty band below the items for the spinner.
+// A viewport margin, so QComboBox sizes the popup to include it.
+class PortListView : public QListView
 {
+public:
+    void setBottomSpace(int pixels) { setViewportMargins(0, 0, 0, pixels); }
+};
+
+PortComboBox::PortComboBox(QWidget *parent)
+    : QComboBox(parent), m_list(new PortListView)
+{
+    setView(m_list);
     setItemDelegate(new PortItemDelegate(this));
+    m_popupSpinner = new Spinner(m_list);
+}
+
+void PortComboBox::setLoading(bool on)
+{
+    if (on == m_loading)
+        return;
+    m_loading = on;
+    m_list->setBottomSpace(on ? Spinner::size() + 12 : 0);
+    if (on)
+        m_popupSpinner->start();
+    else
+        m_popupSpinner->stop();
+    if (isPopupVisible())
+        reshowPopup();   // grow/shrink the open list for the band
+}
+
+void PortComboBox::setSpinnerColor(const QColor &color)
+{
+    m_popupSpinner->setColors(color, QColor());   // no fill: the list's background shows
 }
 
 QString PortComboBox::pluggedText()

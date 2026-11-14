@@ -3,15 +3,22 @@
 #include <QColor>
 #include <QWidget>
 
+class QAbstractScrollArea;
 class QComboBox;
 class QTimer;
 
-// Small spinning arc drawn inside a combo box, just left of its arrow, while its
-// list is loading (boards) or being scanned (ports). Hidden otherwise.
+// Small spinning arc shown while a list is loading (boards) or being scanned
+// (ports). Hidden otherwise. Two placements:
+//  - in a combo box, just left of its arrow;
+//  - in a list popup, centred in the empty band below the items (the view keeps
+//    that band free with a bottom viewport margin).
 class Spinner : public QWidget
 {
 public:
     explicit Spinner(QComboBox *combo);
+    explicit Spinner(QAbstractScrollArea *view);
+
+    static int size();   // the arc's square, in pixels
 
     void setColors(const QColor &arc, const QColor &background);
     void start();
@@ -22,10 +29,12 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
+    void init(QWidget *host);
     void place();
 
-    QComboBox *m_combo;
-    QTimer *m_timer;
+    QComboBox *m_combo = nullptr;
+    QAbstractScrollArea *m_view = nullptr;
+    QTimer *m_timer = nullptr;
     int m_angle = 0;
     QColor m_arc;
     QColor m_background;

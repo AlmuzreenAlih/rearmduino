@@ -30,6 +30,11 @@ public:
 
     bool isPopupVisible() const { return view() && view()->isVisible(); }
 
+    // While scanning: a spinner centred at the bottom of the open list (the
+    // toolbar's own spinner is hidden behind the popup).
+    void setLoading(bool on);
+    void setSpinnerColor(const QColor &color);
+
     // Re-open the popup (e.g. after its items changed) without triggering a new scan.
     void reshowPopup()
     {
@@ -47,6 +52,9 @@ protected:
 
 private:
     bool m_quiet = false;
+    bool m_loading = false;
+    class PortListView *m_list = nullptr;
+    class Spinner *m_popupSpinner = nullptr;
     QColor m_plugged;
     QColor m_disconnected;
 };

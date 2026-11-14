@@ -958,11 +958,13 @@ void MainWindow::scanPorts()
         return;
     statusBar()->showMessage(tr("Scanning ports..."));
     m_portSpinner->start();
+    m_portCombo->setLoading(true);
     m_portsProcess = startCliJson({QStringLiteral("board"), QStringLiteral("list")},
         [this](const QJsonObject &json) { onPortsScanned(json); },
         [this] {
             m_portsProcess = nullptr;
             m_portSpinner->stop();
+            m_portCombo->setLoading(false);
             if (m_portMenu && m_portMenu->isVisible())
                 populatePortMenu();   // Tools > Port is open: show the fresh list
             if (m_uploadAfterScan) {
@@ -1231,6 +1233,7 @@ void MainWindow::applyTheme(Theme::Mode mode)
     m_portCombo->setStatusColors(c.success, c.warning);   // (PLUGGED) green, (DISCONNECTED) amber
     m_boardSpinner->setColors(c.primary, c.editorBg);
     m_portSpinner->setColors(c.primary, c.editorBg);
+    m_portCombo->setSpinnerColor(c.primary);
 
     m_verifyAction->setIcon(Theme::svgIcon(QStringLiteral(":/icons/verify.svg"), c.onSecondary));
     m_uploadAction->setIcon(Theme::svgIcon(QStringLiteral(":/icons/upload.svg"), c.onPrimary));
