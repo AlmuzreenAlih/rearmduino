@@ -18,7 +18,11 @@ Read `CLAUDE.md` first (project rules), then this.
   - Request code (settled): first 10 hex chars (40 bits) of the machine hash, as 8 Crockford base32
     chars `0123456789ABCDEFGHJKMNPQRSTVWXYZ`, most significant first, shown `XXXX-XXXX`.
   - Machine hash: lowercase hex SHA-256, 64 chars (server rejects anything else).
-- Next: step 2 (key pair).
+- **Step 2 (key pair) done, 2026-11-14**: public key in `src/ActivationKey.h` (X||Y, 64 bytes). The
+  private key is in the git-ignored local `webserviceapp2/projects/rearm/.env`
+  (`IDE_LICENSE_PRIVATE_KEY`), so the local backend signs with the real key; the same line goes in
+  the server `.env` at step 4. The user must keep a backup of it.
+- Next: step 3 (app).
 
 ## Where the app stands
 
