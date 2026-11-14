@@ -94,7 +94,7 @@ PortComboBox::PortComboBox(QWidget *parent)
 
 void PortComboBox::setLoading(bool on)
 {
-    if (on == m_loading)
+    if (on == m_loading || !Spinner::enabled())
         return;
     m_loading = on;
     m_list->setBottomSpace(on ? Spinner::size() + 12 : 0);

@@ -9,6 +9,12 @@
 namespace {
 constexpr int kSize = 16;        // spinner square
 constexpr int kArrowWidth = 24;  // QComboBox::drop-down width in the stylesheet
+constexpr bool kEnabled = false; // spinners hidden for now; set true to show them again
+}
+
+bool Spinner::enabled()
+{
+    return kEnabled;
 }
 
 Spinner::Spinner(QComboBox *combo)
@@ -50,6 +56,8 @@ void Spinner::setColors(const QColor &arc, const QColor &background)
 
 void Spinner::start()
 {
+    if (!kEnabled)
+        return;
     place();
     show();
     raise();

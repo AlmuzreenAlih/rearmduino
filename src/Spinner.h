@@ -18,7 +18,8 @@ public:
     explicit Spinner(QComboBox *combo);
     explicit Spinner(QAbstractScrollArea *view);
 
-    static int size();   // the arc's square, in pixels
+    static int size();      // the arc's square, in pixels
+    static bool enabled();  // false: start() does nothing (spinners hidden for now)
 
     void setColors(const QColor &arc, const QColor &background);
     void start();
