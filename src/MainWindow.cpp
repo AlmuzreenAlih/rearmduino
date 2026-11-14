@@ -333,6 +333,7 @@ void MainWindow::showBottomTab(int index)
             m_guide->reloadIfChanged();
         }
         m_bottomStack->setCurrentWidget(m_guide);
+        m_guide->setFocus();   // hotkeys work right away (not while the editor has focus)
         return;
     }
     if (index != 1) {

@@ -14,6 +14,12 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QAbstractSpinBox>
+#include <QComboBox>
+#include <QKeyEvent>
+#include <QKeySequenceEdit>
+#include <QPlainTextEdit>
+#include <QTextEdit>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
@@ -60,6 +66,28 @@ QString quoted(const QString &s)
     const QString arr = QString::fromUtf8(QJsonDocument(QJsonArray{s}).toJson(QJsonDocument::Compact));
     return arr.mid(1, arr.size() - 2);   // strip [ ]
 }
+
+// Keyboard focus is somewhere the user types (code editor, Serial Monitor input,
+// a search field): hotkeys must not fire there.
+bool isTextInput(const QWidget *w)
+{
+    if (!w)
+        return false;
+    if (w->inherits("QsciScintilla") || qobject_cast<const QLineEdit *>(w) || qobject_cast<const QAbstractSpinBox *>(w))
+        return true;
+    if (auto *pe = qobject_cast<const QPlainTextEdit *>(w))
+        return !pe->isReadOnly();
+    if (auto *te = qobject_cast<const QTextEdit *>(w))
+        return !te->isReadOnly();
+    if (auto *cb = qobject_cast<const QComboBox *>(w))
+        return cb->isEditable();
+    return false;
+}
+
+QString hotkeyText(const QKeySequence &key)
+{
+    return key.toString(QKeySequence::NativeText);
+}
 }
 
 QString SerialCommandGuide::fileName()
@@ -88,10 +116,18 @@ SerialCommandGuide::SerialCommandGuide(Sender sender, QWidget *parent)
     m_add->setToolTip(tr("Add a serial command to the list"));
     m_add->setFocusPolicy(Qt::NoFocus);
     connect(m_add, &QToolButton::clicked, this, &SerialCommandGuide::addCommand);
+    m_keysHint = new QLabel;
+    m_keysHint->setObjectName(QStringLiteral("manualStatus"));
+    m_keysHint->hide();
     header->addWidget(title);
     header->addSpacing(12);
     header->addWidget(m_status, 1);
+    header->addWidget(m_keysHint);
+    header->addSpacing(8);
     header->addWidget(m_add);
+    // Clicking the list (not a text field) takes focus, so hotkeys work.
+    setFocusPolicy(Qt::StrongFocus);
+    connect(qApp, &QApplication::focusChanged, this, [this] { updateKeysHint(); });
     layout->addLayout(header);
 
     auto *scroll = new QScrollArea;
@@ -153,7 +189,9 @@ void SerialCommandGuide::load()
                 for (const QJsonValue &v : doc.object().value(QStringLiteral("commands")).toArray()) {
                     const QJsonObject o = v.toObject();
                     m_commands.append({o.value(QStringLiteral("command")).toString(),
-                                       o.value(QStringLiteral("name")).toString()});
+                                       o.value(QStringLiteral("name")).toString(),
+                                       QKeySequence::fromString(o.value(QStringLiteral("hotkey")).toString(),
+                                                                QKeySequence::PortableText)});
                 }
             }
         }
@@ -183,8 +221,11 @@ QString SerialCommandGuide::toJson() const
 {
     QString out = QStringLiteral("{\n  \"commands\": [");
     for (int i = 0; i < m_commands.size(); ++i) {
-        out += QStringLiteral("\n    { \"command\": %1, \"name\": %2 }")
-                   .arg(quoted(m_commands[i].command), quoted(m_commands[i].name));
+        const Command &c = m_commands[i];
+        const QString hotkey = c.hotkey.isEmpty()
+            ? QString() : QStringLiteral(", \"hotkey\": %1").arg(quoted(c.hotkey.toString(QKeySequence::PortableText)));
+        out += QStringLiteral("\n    { \"command\": %1, \"name\": %2%3 }")
+                   .arg(quoted(c.command), quoted(c.name), hotkey);
         if (i + 1 < m_commands.size())
             out += QLatin1Char(',');
     }
@@ -240,6 +281,12 @@ void SerialCommandGuide::rebuild()
         });
         auto *name = new QLabel(QStringLiteral("- ") + m_commands[i].name);
         name->setObjectName(QStringLiteral("commandName"));
+        QLabel *key = nullptr;
+        if (!m_commands[i].hotkey.isEmpty()) {
+            key = new QLabel(QStringLiteral("(%1)").arg(hotkeyText(m_commands[i].hotkey)));
+            key->setObjectName(QStringLiteral("commandKey"));
+            key->setToolTip(tr("Hotkey: press %1 to send \"%2\"").arg(hotkeyText(m_commands[i].hotkey), m_commands[i].command));
+        }
         // Edit / Delete, shown on hover (space kept so the row doesn't shift).
         auto *edit = new QToolButton;
         edit->setObjectName(QStringLiteral("rowEdit"));
@@ -266,6 +313,8 @@ void SerialCommandGuide::rebuild()
             QTimer::singleShot(0, this, [this, i] { removeCommand(i); });
         });
         rowLayout->addWidget(button);
+        if (key)
+            rowLayout->addWidget(key);
         rowLayout->addWidget(name);
         rowLayout->addSpacing(8);
         rowLayout->addWidget(edit);
@@ -276,6 +325,7 @@ void SerialCommandGuide::rebuild()
         QTimer::singleShot(0, row, [row] { row->setHover(row->rect().contains(row->mapFromGlobal(QCursor::pos()))); });
     }
     m_rows->addStretch(1);
+    updateKeysHint();
 }
 
 void SerialCommandGuide::sendCommand(int index)
@@ -296,6 +346,63 @@ void SerialCommandGuide::setStatus(const QString &text, bool isError)
     m_status->setProperty("error", isError);
     m_status->style()->unpolish(m_status);
     m_status->style()->polish(m_status);
+}
+
+// ---------------------------------------------------------------------------
+// Hotkeys
+// ---------------------------------------------------------------------------
+
+void SerialCommandGuide::showEvent(QShowEvent *event)
+{
+    qApp->installEventFilter(this);
+    updateKeysHint();
+    QWidget::showEvent(event);
+}
+
+void SerialCommandGuide::hideEvent(QHideEvent *event)
+{
+    qApp->removeEventFilter(this);
+    QWidget::hideEvent(event);
+}
+
+bool SerialCommandGuide::eventFilter(QObject *watched, QEvent *event)
+{
+    if (event->type() != QEvent::KeyPress || !isVisible() || !m_loadError.isEmpty())
+        return QWidget::eventFilter(watched, event);
+    // Only in the main window (not in a dialog), and never while typing.
+    if (QApplication::activeWindow() != window() || isTextInput(QApplication::focusWidget()))
+        return QWidget::eventFilter(watched, event);
+    auto *key = static_cast<QKeyEvent *>(event);
+    const int code = key->key();
+    if (code == Qt::Key_unknown || code == Qt::Key_Shift || code == Qt::Key_Control || code == Qt::Key_Alt
+        || code == Qt::Key_Meta)
+        return QWidget::eventFilter(watched, event);
+    const QKeySequence pressed(int(key->modifiers() & ~Qt::KeypadModifier) | code);
+    for (int i = 0; i < m_commands.size(); ++i) {
+        if (m_commands[i].hotkey.isEmpty() || m_commands[i].hotkey != pressed)
+            continue;
+        if (!key->isAutoRepeat())   // holding the key sends once
+            sendCommand(i);
+        return true;
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
+// "Hotkeys on" / "Hotkeys paused (typing): click the list" next to + Add.
+void SerialCommandGuide::updateKeysHint()
+{
+    bool any = false;
+    for (const Command &c : m_commands)
+        any = any || !c.hotkey.isEmpty();
+    if (!any || !m_loadError.isEmpty()) {
+        m_keysHint->hide();
+        return;
+    }
+    const bool paused = isTextInput(QApplication::focusWidget());
+    m_keysHint->setText(paused ? tr("Hotkeys paused while typing: click this list to use them")
+                               : tr("Hotkeys on"));
+    m_keysHint->setProperty("error", false);
+    m_keysHint->show();
 }
 
 void SerialCommandGuide::showMenu(int index, const QPoint &globalPos)
@@ -404,6 +511,22 @@ bool SerialCommandGuide::runDialog(Command &cmd, int editingIndex, const QString
     auto *name = new QLineEdit(cmd.name);
     name->setPlaceholderText(tr("e.g. Mixer Home"));
     form->addRow(tr("Command Name"), name);
+
+    // Hotkey: one key or key combination (optional).
+    auto *hotkey = new QKeySequenceEdit(cmd.hotkey);
+    hotkey->setToolTip(tr("Click, then press a key (e.g. Q). Optional."));
+    connect(hotkey, &QKeySequenceEdit::keySequenceChanged, hotkey, [hotkey](const QKeySequence &seq) {
+        if (seq.count() > 1)
+            hotkey->setKeySequence(QKeySequence(seq[0]));   // one key, not a chord
+    });
+    auto *clearKey = new QToolButton;
+    clearKey->setText(tr("Clear"));
+    connect(clearKey, &QToolButton::clicked, hotkey, &QKeySequenceEdit::clear);
+    auto *keyRow = new QHBoxLayout;
+    keyRow->setContentsMargins(0, 0, 0, 0);
+    keyRow->addWidget(hotkey, 1);
+    keyRow->addWidget(clearKey);
+    form->addRow(tr("Hotkey (optional)"), keyRow);
     layout->addLayout(form);
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
@@ -428,6 +551,26 @@ bool SerialCommandGuide::runDialog(Command &cmd, int editingIndex, const QString
                 return;
             }
         }
+        const QKeySequence key = hotkey->keySequence();
+        if (!key.isEmpty()) {
+            for (int i = 0; i < m_commands.size(); ++i) {
+                if (i != editingIndex && m_commands[i].hotkey == key) {
+                    QMessageBox::warning(&dlg, title, tr("%1 is already the hotkey of \"%2\".")
+                                                          .arg(hotkeyText(key), m_commands[i].command));
+                    hotkey->setFocus();
+                    return;
+                }
+            }
+            // Menu shortcuts (Ctrl+S, F5, ...) win over hotkeys: don't allow those.
+            for (QAction *a : window()->findChildren<QAction *>()) {
+                if (a->shortcuts().contains(key)) {
+                    QMessageBox::warning(&dlg, title, tr("%1 is already used by \"%2\" in the menus.")
+                                                          .arg(hotkeyText(key), a->text().remove(QLatin1Char('&'))));
+                    hotkey->setFocus();
+                    return;
+                }
+            }
+        }
         dlg.accept();
     });
     command->setFocus();
@@ -436,5 +579,6 @@ bool SerialCommandGuide::runDialog(Command &cmd, int editingIndex, const QString
         return false;
     cmd.command = command->text().trimmed();
     cmd.name = name->text().trimmed();
+    cmd.hotkey = hotkey->keySequence();
     return true;
 }

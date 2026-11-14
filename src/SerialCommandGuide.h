@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QDateTime>
+#include <QKeySequence>
 #include <QList>
 #include <QString>
 #include <QWidget>
@@ -12,7 +13,8 @@ class QToolButton;
 class QVBoxLayout;
 
 // "Serial Command Guide" tab of the bottom pane: the sketch's serial commands,
-// one row each: [command] - name. Clicking the command button sends it.
+// one row each: [command] (hotkey) - name. Clicking the command button, or
+// pressing its hotkey while this tab shows (and no text field has focus), sends it.
 // Stored per sketch in <sketch>/serial-commands.json.
 class SerialCommandGuide : public QWidget
 {
@@ -28,11 +30,20 @@ public:
     void reloadIfChanged();                  // picks up edits made outside the IDE
     static QString fileName();
 
+protected:
+    // Hotkeys: an application-wide key filter while this tab is showing.
+    bool eventFilter(QObject *watched, QEvent *event) override;
+    void showEvent(QShowEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
+
 private:
     struct Command {
-        QString command;   // the serial text, e.g. "MIXER_HOME"
-        QString name;      // what it does, e.g. "Mixer Home"
+        QString command;      // the serial text, e.g. "MIXER_HOME"
+        QString name;         // what it does, e.g. "Mixer Home"
+        QKeySequence hotkey;  // optional single key (combination), e.g. Q
     };
+
+    void updateKeysHint();
 
     void load();
     bool save();
@@ -58,4 +69,5 @@ private:
     QVBoxLayout *m_rows = nullptr;
     QToolButton *m_add = nullptr;
     QLabel *m_status = nullptr;
+    QLabel *m_keysHint = nullptr;   // hotkeys on / paused while typing
 };

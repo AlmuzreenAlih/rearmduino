@@ -61,8 +61,19 @@ SerialMonitor::SerialMonitor(QWidget *parent)
     m_input->setPlaceholderText(tr("Message (Enter to send)"));
     m_sendButton = new QPushButton(tr("Send"));
     m_sendButton->setObjectName(QStringLiteral("sendButton"));
+    // Clear: empties the received view (the port stays open).
+    auto *clearButton = new QToolButton;
+    clearButton->setObjectName(QStringLiteral("clearButton"));
+    clearButton->setText(tr("Clear"));
+    clearButton->setToolTip(tr("Clear the Serial Monitor"));
+    connect(clearButton, &QToolButton::clicked, this, [this] {
+        m_pending.clear();
+        m_view->clear();
+        m_atLineStart = true;
+    });
     inputLayout->addWidget(m_input, 1);
     inputLayout->addWidget(m_sendButton);
+    inputLayout->addWidget(clearButton);
     layout->addWidget(inputRow);
 
     // Options row: line ending + baud.

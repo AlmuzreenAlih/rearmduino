@@ -295,16 +295,16 @@ QToolButton#serialButton:hover { background: @hover@; }
 QToolButton#serialButton:checked { border-color: @primary@; background: @hover@; }
 
 QWidget#serialControls { background: @window@; }
-QToolButton#timestampButton, QToolButton#resetButton {
+QToolButton#timestampButton, QToolButton#resetButton, QToolButton#clearButton {
     background: @editorBg@;
     color: @text@;
     border: 1px solid @border@;
     border-radius: 6px;
     padding: 5px 7px;
 }
-QToolButton#resetButton { padding: 5px 10px; }
-QToolButton#timestampButton:hover, QToolButton#resetButton:hover { border-color: @muted@; }
-QToolButton#resetButton:pressed { background: @hover@; }
+QToolButton#resetButton, QToolButton#clearButton { padding: 5px 10px; }
+QToolButton#timestampButton:hover, QToolButton#resetButton:hover, QToolButton#clearButton:hover { border-color: @muted@; }
+QToolButton#resetButton:pressed, QToolButton#clearButton:pressed { background: @hover@; }
 QToolButton#timestampButton:checked { border-color: @primary@; background: @hover@; }
 QLineEdit {
     background: @editorBg@;
@@ -357,6 +357,7 @@ QPushButton#commandButton {
 QPushButton#commandButton:hover { border-color: @secondary@; }
 QPushButton#commandButton:pressed { background: @secondary@; color: @onSecondary@; border-color: @secondary@; }
 QLabel#commandName { color: @text@; }
+QLabel#commandKey { color: @secondary@; font-weight: bold; }
 QWidget#commandRow { border-radius: 6px; }
 QWidget#commandRow:hover { background: @window@; }
 QToolButton#rowEdit, QToolButton#rowDelete {
