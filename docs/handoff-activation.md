@@ -30,10 +30,12 @@ Read `CLAUDE.md` first (project rules), then this.
   rejected, revoke with and without unsaved changes. Not exercised: running the portable builder
   to the end (copy.json writing), and Save / Save As inside the revoke prompt.
   Settled: copy ID lives in `copy.json`; the waiting window also re-checks every minute.
-- **Do not rebuild `build-win-Release` before step 4+5 are done**: a new Release build shows the
-  waiting window until the live server has the endpoint and this PC is approved there. Use the
-  Debug build (no check) meanwhile.
-- Next: step 4 (deploy; ask first).
+- **Step 4 (deploy) done, 2026-11-14**: backend pushed, migration 016 and the key are on the server.
+- **Step 5, first half done**: `build-win-Release` rebuilt with activation; the developer's PC
+  (request code `BPVK-NQKM`, copy name `dev`) is approved on the live server and holds a license.
+- Left: build a portable copy for the partner (first full run of the builder's `copy.json`
+  writing: check the file is there and that the copy shows its own name in `ide_machines`),
+  then approve the partner's PC when they send their request code.
 
 ## Where the app stands
 
