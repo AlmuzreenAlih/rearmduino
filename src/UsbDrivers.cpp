@@ -16,6 +16,15 @@
 #include <shellapi.h>
 #endif
 
+#ifdef Q_OS_LINUX
+#include <cerrno>
+#include <cstring>
+#include <fcntl.h>
+#include <linux/usbdevice_fs.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+#endif
+
 namespace UsbDrivers {
 
 namespace {
@@ -258,11 +267,72 @@ void install(Kind, QObject *, std::function<void(bool, const QString &)> done)
 {
     done(false, tr("Driver installation is only needed on Windows."));
 }
+
+#ifdef Q_OS_LINUX
+// USB reset (USBDEVFS_RESET) of the device behind /dev/ttyACM0 or /dev/ttyUSB0:
+// the kernel re-enumerates it, as when it is plugged in. Needs write access to
+// its /dev/bus/usb/BBB/DDD file: linux/99-myide-usb-reset.rules grants that to
+// the dialout group.
+void restartPort(const QString &portName, QObject *, std::function<void(bool, const QString &)> done)
+{
+    const QString tty = QFileInfo(portName).fileName();   // ttyACM0
+    // /sys/class/tty/ttyACM0/device -> .../1-1.2/1-1.2:1.0 (interface); walk up
+    // to the USB device directory (the one with busnum/devnum).
+    QDir dir(QFileInfo(QStringLiteral("/sys/class/tty/%1/device").arg(tty)).canonicalFilePath());
+    QString busnum, devnum;
+    for (int depth = 0; depth < 4 && !dir.isRoot(); ++depth) {
+        QFile bus(dir.filePath(QStringLiteral("busnum"))), dev(dir.filePath(QStringLiteral("devnum")));
+        if (bus.open(QIODevice::ReadOnly) && dev.open(QIODevice::ReadOnly)) {
+            busnum = QString::fromLatin1(bus.readAll()).trimmed();
+            devnum = QString::fromLatin1(dev.readAll()).trimmed();
+            break;
+        }
+        dir.cdUp();
+    }
+    if (busnum.isEmpty() || devnum.isEmpty()) {
+        done(false, tr("%1 is not a USB device the IDE can reset (unplugged?). Unplug the board and plug it in again.")
+                        .arg(portName));
+        return;
+    }
+    const QString node = QStringLiteral("/dev/bus/usb/%1/%2").arg(busnum.toInt(), 3, 10, QLatin1Char('0'))
+                                                              .arg(devnum.toInt(), 3, 10, QLatin1Char('0'));
+    const int fd = ::open(QFile::encodeName(node).constData(), O_WRONLY);
+    if (fd < 0) {
+        const int err = errno;
+        if (err == EACCES || err == EPERM)
+            done(false, tr("No permission to reset %1 (%2). Install the IDE's USB rule once:\n"
+                           "  sudo cp linux/99-myide-usb-reset.rules /etc/udev/rules.d/\n"
+                           "  sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=usb\n"
+                           "For now, unplug the board and plug it in again.").arg(portName, node));
+        else
+            done(false, tr("Cannot open %1: %2").arg(node, QString::fromLocal8Bit(strerror(err))));
+        return;
+    }
+    const int rc = ::ioctl(fd, USBDEVFS_RESET, 0);
+    const int err = errno;
+    ::close(fd);
+    if (rc < 0)
+        done(false, tr("USB reset of %1 failed: %2. Unplug the board and plug it in again.")
+                        .arg(portName, QString::fromLocal8Bit(strerror(err))));
+    else
+        done(true, tr("Reset the USB device of %1.").arg(portName));
+}
+#else
 void restartPort(const QString &portName, QObject *, std::function<void(bool, const QString &)> done)
 {
     done(false, tr("Unplug the board on %1 and plug it in again.").arg(portName));
 }
+#endif
 
 #endif
+
+bool canRestartPorts()
+{
+#if defined(Q_OS_WIN) || defined(Q_OS_LINUX)
+    return true;
+#else
+    return false;
+#endif
+}
 
 }

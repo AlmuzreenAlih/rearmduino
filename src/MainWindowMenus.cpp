@@ -860,13 +860,13 @@ void MainWindow::showPortableBuilder()
 }
 
 // The Serial Monitor could not open the port, or the board stopped taking data:
-// after motor/relay noise the board's USB chip can hang and Windows keeps the port
-// "busy" until the board is unplugged. Restarting the USB device does the same.
+// after motor/relay noise the board's USB chip can hang and the port stays "busy"
+// or silent until the board is unplugged. Restarting the USB device does the same.
 void MainWindow::offerUsbRestart(const QString &portName, const QString &error)
 {
     if (m_usbRestartBusy || portName.isEmpty())
         return;
-    if (!UsbDrivers::supported()) {
+    if (!UsbDrivers::canRestartPorts()) {
         appendLog(tr("%1 seems stuck (%2). Close any other program using it; otherwise unplug the board "
                      "and plug it in again.").arg(portName, error), Theme::LogKind::Warning);
         return;
@@ -877,8 +877,8 @@ void MainWindow::offerUsbRestart(const QString &portName, const QString &error)
     box.setInformativeText(
         tr("If another program (for example the Arduino IDE's Serial Monitor) has %1 open, close it instead.\n\n"
            "Otherwise the board's USB chip is probably stuck, which can happen when it switches a motor or relay. "
-           "Restarting its USB device is the same as unplugging the board and plugging it back in. "
-           "Windows will ask for administrator permission.").arg(portName));
+           "Restarting its USB device is the same as unplugging the board and plugging it back in.%2")
+            .arg(portName, UsbDrivers::supported() ? tr(" Windows will ask for administrator permission.") : QString()));
     QPushButton *restart = box.addButton(tr("Restart USB Device"), QMessageBox::AcceptRole);
     box.addButton(QMessageBox::Cancel);
     box.setDefaultButton(restart);

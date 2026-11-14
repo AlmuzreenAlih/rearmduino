@@ -1,0 +1,14 @@
+# myide: let the dialout group reset Arduino-type USB boards, so a serial port
+# stuck after motor/relay noise can be recovered without unplugging the board.
+# (Only changes who may write to these boards' /dev/bus/usb device files.)
+#
+# Install (once):
+#   sudo cp linux/99-myide-usb-reset.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules
+#   sudo udevadm trigger --subsystem-match=usb
+# Remove: delete /etc/udev/rules.d/99-myide-usb-reset.rules, then run the two
+# udevadm commands again.
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="2341", GROUP="dialout", MODE="0664"
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="2a03", GROUP="dialout", MODE="0664"
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="1a86", GROUP="dialout", MODE="0664"
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="0403", ATTR{idProduct}=="6001", GROUP="dialout", MODE="0664"
