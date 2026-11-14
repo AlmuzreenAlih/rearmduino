@@ -2,6 +2,8 @@
 #include "ArduinoLexer.h"
 #include "BoardComboBox.h"
 #include "PortComboBox.h"
+#include "Portable.h"
+#include "UsbDrivers.h"
 #include "ManualControl.h"
 #include "SerialCommandGuide.h"
 #include "SerialMonitor.h"
@@ -137,6 +139,13 @@ MainWindow::MainWindow(const QString &sketchPath, QWidget *parent)
     // Fill the board list once the event loop runs (after the window is shown).
     // Ports are only scanned on demand: `board list` can hit the network.
     QTimer::singleShot(0, this, &MainWindow::loadBoards);
+    if (Portable::isPortable() && QDir::toNativeSeparators(Portable::appDir()).size() > Portable::kMaxFolderPath)
+        appendLog(tr("Warning: this portable folder's path is long (%1 characters); compiling may fail with "
+                     "\"No such file or directory\". Move the folder somewhere shorter, like the Desktop.")
+                      .arg(QDir::toNativeSeparators(Portable::appDir()).size()));
+    // A board without a driver (e.g. a CH340 clone on a fresh PC): offer the bundled one.
+    if (UsbDrivers::supported())
+        QTimer::singleShot(3000, this, [this] { checkUsbDrivers(false); });
 }
 
 MainWindow::~MainWindow()
@@ -555,6 +564,8 @@ QString MainWindow::cliPath()
         }
     }
     if (m_cliPath.isEmpty())
+        m_cliPath = Portable::bundledCli();   // portable copy ships its own
+    if (m_cliPath.isEmpty())
         m_cliPath = QStandardPaths::findExecutable(QStringLiteral("arduino-cli"));
     if (m_cliPath.isEmpty())
         appendLog(tr("Error: arduino-cli was not found on PATH."));
@@ -656,6 +667,7 @@ void MainWindow::startTask(const QString &name, const QStringList &args)
 
     appendLog(QStringLiteral("> arduino-cli %1").arg(args.join(QLatin1Char(' '))), Theme::LogKind::Command);
     setBusy(true);
+    m_process->setProcessEnvironment(Portable::cliEnvironment());
     m_process->start(cli, args);
 }
 
@@ -803,6 +815,7 @@ QProcess *MainWindow::startCliJson(const QStringList &args,
         if (onDone)
             onDone();
     });
+    proc->setProcessEnvironment(Portable::cliEnvironment());
     proc->start(cli, args + QStringList{QStringLiteral("--json")});
     return proc;
 }
@@ -914,6 +927,8 @@ void MainWindow::scanPorts()
 
 void MainWindow::onPortsScanned(const QJsonObject &json)
 {
+    if (UsbDrivers::supported())
+        checkUsbDrivers(false);   // "my board isn't listed": maybe it has no driver
     struct Port { QString address, label, fqbn, boardName; };
     QVector<Port> ports;
     for (const QJsonValue &v : json.value(QStringLiteral("detected_ports")).toArray()) {

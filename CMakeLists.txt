@@ -56,6 +56,12 @@ add_executable(myide WIN32
     src/ManualControl.h
     src/SerialCommandGuide.cpp
     src/SerialCommandGuide.h
+    src/Portable.cpp
+    src/Portable.h
+    src/PortableBuilder.cpp
+    src/PortableBuilder.h
+    src/UsbDrivers.cpp
+    src/UsbDrivers.h
     resources/resources.qrc
 )
 
@@ -70,6 +76,8 @@ target_link_libraries(myide PRIVATE
 )
 if(WIN32)
     target_compile_definitions(myide PRIVATE QSCINTILLA_DLL)  # dllimport QScintilla symbols
+    # USB driver check (UsbDrivers.cpp): Windows system libraries, not extra dependencies.
+    target_link_libraries(myide PRIVATE setupapi cfgmgr32 version)
 endif()
 if(MSVC)
     target_compile_options(myide PRIVATE /utf-8)   # sources are UTF-8 (default is the ANSI code page)

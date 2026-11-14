@@ -5,6 +5,9 @@
 #include "MainWindow.h"
 #include "ArduinoLexer.h"
 #include "ManualControl.h"
+#include "Portable.h"
+#include "PortableBuilder.h"
+#include "UsbDrivers.h"
 #include "SerialCommandGuide.h"
 #include "PortComboBox.h"
 #include "SettingsDialogs.h"
@@ -168,6 +171,13 @@ void MainWindow::setupMenus()
     tools->addSeparator();
     tools->addAction(m_serialAction);
     registerAction(m_serialAction, "tools.serialMonitor", key(Qt::CTRL | Qt::SHIFT | Qt::Key_M));
+    if (UsbDrivers::supported()) {   // Windows: drivers and the portable folder
+        tools->addSeparator();
+        registerAction(tools->addAction(tr("Check USB &Drivers..."), this, [this] { checkUsbDrivers(true); }),
+                       "tools.checkDrivers", QKeySequence());
+        registerAction(tools->addAction(tr("Create Portable &Version..."), this, &MainWindow::showPortableBuilder),
+                       "tools.portable", QKeySequence());
+    }
     for (QAction *a : {m_verifyAction, m_uploadAction, m_serialAction})
         a->setIconVisibleInMenu(false);   // icons are colored for the toolbar buttons
 
@@ -579,7 +589,7 @@ void MainWindow::updateTitle()
     QString name = QFileInfo(m_sketchFile).completeBaseName();
     if (m_sketchIsTemp)
         name += tr(" (not saved)");
-    setWindowTitle(QStringLiteral("%1[*] - myide").arg(name));
+    setWindowTitle(QStringLiteral("%1[*] - myide%2").arg(name, Portable::isPortable() ? tr(" (portable)") : QString()));
     setWindowModified(anyModified());
 }
 
@@ -827,4 +837,77 @@ void MainWindow::showAdvancedSettings(int tab)
         return;
     applyShortcuts();
     m_cliPath.clear();   // re-resolve (path may have changed)
+}
+
+// ---------------------------------------------------------------------------
+// USB drivers and the portable version (Windows)
+// ---------------------------------------------------------------------------
+
+void MainWindow::showPortableBuilder()
+{
+    PortableBuilder dlg(cliPath(), Portable::cliEnvironment(), m_sketchDir, this);
+    dlg.exec();
+}
+
+void MainWindow::checkUsbDrivers(bool interactive)
+{
+    const QList<UsbDrivers::Device> boards = UsbDrivers::boards();
+    QList<UsbDrivers::Kind> missing;
+    QStringList missingNames;
+    for (const UsbDrivers::Device &d : boards) {
+        if (d.hasDriver || missing.contains(d.kind))
+            continue;
+        if (!interactive && m_driverPromptsShown.contains(int(d.kind)))
+            continue;   // asked already this session
+        missing.append(d.kind);
+        missingNames.append(QStringLiteral("%1 (%2)").arg(d.name, d.hardwareId));
+    }
+
+    if (missing.isEmpty()) {
+        if (!interactive)
+            return;
+        QStringList lines;
+        for (const UsbDrivers::Device &d : boards)
+            lines << QStringLiteral("- %1 (%2): %3").arg(d.name, d.hardwareId, d.hasDriver ? tr("driver OK") : tr("no driver"));
+        const QString ch340 = UsbDrivers::installedCh340Version();
+        QMessageBox::information(this, tr("USB Drivers"),
+            (lines.isEmpty() ? tr("No Arduino or CH340 board is plugged in.") : tr("Plugged-in boards:\n%1").arg(lines.join(QLatin1Char('\n'))))
+            + QStringLiteral("\n\n")
+            + (ch340.isEmpty() ? tr("CH340 driver (clone boards): not installed.")
+                               : tr("CH340 driver (clone boards): installed, version %1.").arg(ch340))
+            + QStringLiteral("\n")
+            + tr("Bundled drivers: Arduino %1, CH340 %2.")
+                  .arg(UsbDrivers::bundledDir(UsbDrivers::Kind::Arduino).isEmpty() ? tr("no") : tr("yes"),
+                       UsbDrivers::bundledDir(UsbDrivers::Kind::Ch340).isEmpty() ? tr("no") : tr("yes")));
+        return;
+    }
+
+    for (UsbDrivers::Kind kind : missing) {
+        m_driverPromptsShown.insert(int(kind));
+        const QString name = UsbDrivers::kindName(kind);
+        appendLog(tr("USB: a %1 board is plugged in but has no driver: %2").arg(name, missingNames.join(QStringLiteral(", "))),
+                  Theme::LogKind::Warning);
+        if (UsbDrivers::bundledDir(kind).isEmpty()) {
+            const QString hint = kind == UsbDrivers::Kind::Ch340
+                ? tr("Install the CH340 driver from the chip maker (wch.cn, CH341SER.EXE), then plug the board in again.")
+                : tr("Install the Arduino IDE (it installs the drivers), or connect to the internet so Windows Update can find one.");
+            appendLog(hint, Theme::LogKind::Warning);
+            if (interactive)
+                QMessageBox::information(this, tr("USB Drivers"), tr("The %1 board has no driver, and none is bundled with this copy.\n\n%2").arg(name, hint));
+            continue;
+        }
+        const auto answer = QMessageBox::question(this, tr("Install USB Driver"),
+            tr("A %1 board is plugged in but Windows has no driver for it:\n%2\n\n"
+               "Install the bundled %1 driver now? Windows will ask for administrator permission.")
+                .arg(name, missingNames.join(QLatin1Char('\n'))));
+        if (answer != QMessageBox::Yes)
+            continue;
+        appendLog(tr("USB: installing the %1 driver...").arg(name), Theme::LogKind::Command);
+        UsbDrivers::install(kind, this, [this](bool ok, const QString &message) {
+            appendLog(QStringLiteral("USB: ") + message, ok ? Theme::LogKind::Success : Theme::LogKind::Error);
+            m_bottomTabs->setCurrentIndex(0);
+            if (ok)
+                scanPorts();
+        });
+    }
 }

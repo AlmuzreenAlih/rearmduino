@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "Portable.h"
 
 #include <QApplication>
 #include <QFont>
@@ -14,6 +15,7 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     QApplication::setOrganizationName(QStringLiteral("myide"));   // QSettings location
     QApplication::setApplicationName(QStringLiteral("myide"));
+    Portable::setupSettings();   // portable copy: settings in its own folder, not the registry
     // Same look on Windows and the Pi, independent of the Pi's qt5ct settings.
     QApplication::setStyle(QStringLiteral("Fusion"));
 
