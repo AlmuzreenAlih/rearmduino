@@ -694,10 +694,33 @@ void PortableBuilder::build()
         if (!job.zipPath.isEmpty()) {
             say(tr("Zipping..."));
             post([this] { m_progress->setValue(920); });
+            // Windows' tar.exe crashes on file names with characters outside the system code page
+            // (seen with bsdtar 3.8.9 on two Cyrillic-named board files of the ESP32 debug tool),
+            // so files with non-ASCII names are left out of the zip. The folder keeps them.
+            static const QRegularExpression nonAscii(QStringLiteral("[^\\x20-\\x7e]"));
+            const QString folderName = QFileInfo(job.target).fileName();
+            if (folderName.contains(nonAscii))
+                return fail(tr("The folder is complete, but it can't be zipped: use a folder name with only "
+                               "English letters, digits and symbols."));
+            QStringList skipped;
+            for (const CopyItem &f : files) {
+                const QString relative = QDir(job.target).relativeFilePath(f.to);
+                if (relative.contains(nonAscii))
+                    skipped << relative;
+            }
+            QStringList args{QStringLiteral("-a"), QStringLiteral("-c")};
+            if (!skipped.isEmpty()) {
+                args << QStringLiteral("--exclude") << QStringLiteral("*[^ -~]*");
+                say(tr("Left out of the zip (the name has letters Windows' zip tool can't handle; still in the folder): %1%2")
+                        .arg(QStringList(skipped.mid(0, 5)).join(QStringLiteral(", ")),
+                             skipped.size() > 5 ? tr(" and %1 more").arg(skipped.size() - 5) : QString()));
+            }
+            args << QStringLiteral("-f") << QDir::toNativeSeparators(job.zipPath) << folderName;
             QProcess tar;
             tar.setWorkingDirectory(QFileInfo(job.target).absolutePath());
-            tar.start(QStringLiteral("tar"), {QStringLiteral("-a"), QStringLiteral("-c"), QStringLiteral("-f"),
-                                              QDir::toNativeSeparators(job.zipPath), QFileInfo(job.target).fileName()});
+            // Windows' own tar by full path: another tar on PATH (e.g. Git's) can't write zips.
+            tar.start(QDir::fromNativeSeparators(qEnvironmentVariable("SystemRoot", QStringLiteral("C:/Windows")))
+                          + QStringLiteral("/System32/tar.exe"), args);
             if (!tar.waitForStarted(10000))
                 return fail(tr("Could not start tar.exe to make the zip (it comes with Windows 10 and later)."));
             while (!tar.waitForFinished(500)) {
@@ -708,8 +731,12 @@ void PortableBuilder::build()
                     return fail(tr("Stopped while zipping; the folder is complete, the zip was removed."));
                 }
             }
-            if (tar.exitCode() != 0)
-                return fail(tr("Zipping failed: %1").arg(QString::fromLocal8Bit(tar.readAllStandardError()).trimmed()));
+            if (tar.exitStatus() != QProcess::NormalExit || tar.exitCode() != 0) {
+                QFile::remove(job.zipPath);   // incomplete
+                const QString error = QString::fromLocal8Bit(tar.readAllStandardError()).trimmed();
+                return fail(tr("The folder is complete, but zipping failed: %1")
+                                .arg(error.isEmpty() ? tr("tar.exe stopped unexpectedly.") : error));
+            }
         }
         const QString summary = job.zipPath.isEmpty()
             ? tr("Done: %1 (%2).").arg(QDir::toNativeSeparators(job.target), sizeText(total))
