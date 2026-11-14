@@ -1,0 +1,2 @@
+// REARMduino .exe icon (Windows). Explorer shows the first icon resource.
+IDI_ICON1 ICON "rearmduino.ico"

@@ -3,6 +3,7 @@
 
 #include <QApplication>
 #include <QFont>
+#include <QIcon>
 
 int main(int argc, char *argv[])
 {
@@ -24,6 +25,12 @@ int main(int argc, char *argv[])
     if (uiFont.pointSizeF() > 0 && uiFont.pointSizeF() < 10)
         uiFont.setPointSizeF(10);
     QApplication::setFont(uiFont);
+
+    // REARMduino logo: window/taskbar icon (the .exe file icon comes from rearmduino.rc).
+    QIcon appIcon;
+    for (int size : {16, 32, 48, 64, 128, 256})
+        appIcon.addFile(QStringLiteral(":/app/rearmduino-%1.png").arg(size), QSize(size, size));
+    QApplication::setWindowIcon(appIcon);
 
     // Optional first argument: a sketch folder or .ino file.
     const QStringList args = QApplication::arguments();

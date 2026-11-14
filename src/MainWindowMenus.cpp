@@ -209,7 +209,7 @@ void MainWindow::setupMenus()
     registerAction(help->addAction(tr("&Keyboard Shortcuts..."), this, [this] { showAdvancedSettings(0); }),
                    "help.keyboardShortcuts", QKeySequence());
     help->addSeparator();
-    registerAction(help->addAction(tr("&About myide"), this, &MainWindow::showAbout), "help.about", QKeySequence());
+    registerAction(help->addAction(tr("&About REARMduino"), this, &MainWindow::showAbout), "help.about", QKeySequence());
 }
 
 QAction *MainWindow::registerAction(QAction *action, const char *id, const QKeySequence &defaultKey)
@@ -580,8 +580,8 @@ void MainWindow::showSketchFolder()
 
 void MainWindow::showAbout()
 {
-    QMessageBox::about(this, tr("About myide"),
-        tr("<h3>myide %1</h3>"
+    QMessageBox::about(this, tr("About REARMduino"),
+        tr("<h3>REARMduino %1</h3>"
            "<p>A fast, lightweight Arduino IDE.</p>"
            "<p>Qt %2 &middot; QScintilla %3<br>arduino-cli: %4</p>"
            "<p>Editor font: JetBrains Mono (SIL Open Font License 1.1)</p>")
@@ -603,7 +603,7 @@ void MainWindow::updateTitle()
     QString name = QFileInfo(m_sketchFile).completeBaseName();
     if (m_sketchIsTemp)
         name += tr(" (not saved)");
-    setWindowTitle(QStringLiteral("%1[*] - myide%2").arg(name, Portable::isPortable() ? tr(" (portable)") : QString()));
+    setWindowTitle(QStringLiteral("%1[*] - REARMduino%2").arg(name, Portable::isPortable() ? tr(" (portable)") : QString()));
     setWindowModified(anyModified());
 }
 

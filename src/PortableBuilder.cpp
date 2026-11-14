@@ -140,7 +140,7 @@ PortableBuilder::PortableBuilder(const QString &cliPath, const QProcessEnvironme
     outRow->addWidget(m_outDir, 1);
     outRow->addWidget(browseOut);
     form->addRow(tr("Save in"), outRow);
-    m_name = new QLineEdit(s.value(QStringLiteral("portable/name"), QStringLiteral("myide-portable")).toString());
+    m_name = new QLineEdit(s.value(QStringLiteral("portable/name"), QStringLiteral("REARMduino-portable")).toString());
     form->addRow(tr("Folder name"), m_name);
 
     auto *chRow = new QHBoxLayout;
@@ -570,8 +570,8 @@ void PortableBuilder::build()
         if (!marker.open(QIODevice::WriteOnly | QIODevice::Text))
             return fail(tr("Could not write %1").arg(Portable::markerFileName()));
         marker.write(
-            "myide portable version\r\n"
-            "======================\r\n\r\n"
+            "REARMduino portable version\r\n"
+            "===========================\r\n\r\n"
             "Start: double-click myide.exe. Nothing needs to be installed.\r\n"
             "Keep this folder together (do not move myide.exe out of it), somewhere you can write\r\n"
             "(e.g. Desktop or Documents, not Program Files), with a short path: compiling fails if\r\n"

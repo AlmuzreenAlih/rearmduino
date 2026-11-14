@@ -8,5 +8,11 @@
     <file>icons/chevron-down.svg</file>
     <file>icons/serial.svg</file>
     <file>icons/clock.svg</file>
+    <file>app/rearmduino-16.png</file>
+    <file>app/rearmduino-32.png</file>
+    <file>app/rearmduino-48.png</file>
+    <file>app/rearmduino-64.png</file>
+    <file>app/rearmduino-128.png</file>
+    <file>app/rearmduino-256.png</file>
   </qresource>
 </RCC>

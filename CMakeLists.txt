@@ -67,6 +67,9 @@ add_executable(myide WIN32
     src/UsbDrivers.h
     resources/resources.qrc
 )
+if(WIN32)
+    target_sources(myide PRIVATE resources/app/rearmduino.rc)   # .exe icon in Explorer/taskbar
+endif()
 
 target_include_directories(myide PRIVATE ${QSCINTILLA_INCLUDE_DIR})
 target_compile_definitions(myide PRIVATE MYIDE_VERSION="${PROJECT_VERSION}")
