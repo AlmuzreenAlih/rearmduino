@@ -157,10 +157,18 @@ MainWindow::MainWindow(const QString &sketchPath, QWidget *parent)
     // approved exception to "no network at startup". Later scans are on demand.
     QTimer::singleShot(0, this, &MainWindow::loadBoards);
     QTimer::singleShot(3000, this, &MainWindow::scanPorts);
-    if (Portable::isPortable() && QDir::toNativeSeparators(Portable::appDir()).size() > Portable::kMaxFolderPath)
-        appendLog(tr("Warning: this portable folder's path is long (%1 characters); compiling may fail with "
-                     "\"No such file or directory\". Move the folder somewhere shorter, like the Desktop.")
-                      .arg(QDir::toNativeSeparators(Portable::appDir()).size()));
+    if (Portable::isPortable()) {
+        const int pathLength = QDir::toNativeSeparators(Portable::appDir()).size();
+        if (pathLength > Portable::kMaxFolderPath)
+            appendLog(tr("Warning: this portable folder's path is long (%1 characters); compiling may fail with "
+                         "\"No such file or directory\". Move the folder somewhere shorter, like C:\\REARMduino.")
+                          .arg(pathLength));
+        else if (pathLength > Portable::kMaxFolderPathEsp8266 && Portable::bundlesEsp8266())
+            appendLog(tr("Warning: this portable folder's path is %1 characters long. ESP8266 boards only compile "
+                         "from a path of about %2 characters or less (other boards are fine). For ESP8266, move "
+                         "the folder somewhere shorter, like C:\\REARMduino.")
+                          .arg(pathLength).arg(Portable::kMaxFolderPathEsp8266));
+    }
     // A board without a driver (e.g. a CH340 clone on a fresh PC): offer the bundled one.
     if (UsbDrivers::supported())
         QTimer::singleShot(3000, this, [this] { checkUsbDrivers(false); });

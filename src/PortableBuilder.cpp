@@ -42,6 +42,9 @@
 namespace {
 
 constexpr int LibPathRole = Qt::UserRole;
+constexpr int CorePathRole = Qt::UserRole;       // "packages/<vendor>/hardware/<arch>/<version>"
+constexpr int CoreIdRole = Qt::UserRole + 1;     // "<vendor>:<arch>"
+const char kAvrId[] = "arduino:avr";
 
 qint64 treeSize(const QString &path)
 {
@@ -120,13 +123,15 @@ PortableBuilder::PortableBuilder(const QString &cliPath, const QProcessEnvironme
     setObjectName(QStringLiteral("portableBuilder"));
     setWindowTitle(tr("Create Portable Version"));
     setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
-    resize(720, 640);
+    resize(720, 760);
     QSettings s;
 
     auto *layout = new QVBoxLayout(this);
     auto *intro = new QLabel(tr("Makes a folder you can copy or zip and send. It runs on another Windows PC "
-                                "without installing anything: this app, arduino-cli, the AVR core (Uno, Mega, Nano...) "
-                                "with its compiler, the libraries you tick, and USB drivers. Its settings stay inside the folder."));
+                                "without installing anything: this app, arduino-cli, the boards you tick (AVR: Uno, Mega, "
+                                "Nano... is always included) with their compilers, the libraries you tick, and USB "
+                                "drivers. Its settings stay inside the folder. It also uses the libraries in the other "
+                                "PC's Documents\\Arduino\\libraries."));
     intro->setWordWrap(true);
     intro->setObjectName(QStringLiteral("manualNote"));
     layout->addWidget(intro);
@@ -172,6 +177,14 @@ PortableBuilder::PortableBuilder(const QString &cliPath, const QProcessEnvironme
     chRow->addWidget(chFile);
     form->addRow(tr("CH340 driver"), chRow);
     layout->addLayout(form);
+
+    // Boards (cores)
+    auto *coreTitle = new QLabel(tr("Boards to include"));
+    coreTitle->setObjectName(QStringLiteral("manualTitle"));
+    layout->addWidget(coreTitle);
+    m_cores = new QListWidget;
+    m_cores->setObjectName(QStringLiteral("boardList"));
+    layout->addWidget(m_cores, 1);
 
     // Libraries
     auto *libHeader = new QHBoxLayout;
@@ -221,6 +234,7 @@ PortableBuilder::PortableBuilder(const QString &cliPath, const QProcessEnvironme
     connect(m_closeButton, &QPushButton::clicked, this, &PortableBuilder::reject);
     layout->addWidget(buttons);
 
+    loadCores();
     loadLibraries();
 }
 
@@ -254,6 +268,47 @@ QString PortableBuilder::cliConfig(const QString &key) const
     if (!p.waitForFinished(15000) || p.exitCode() != 0)
         return {};
     return QString::fromLocal8Bit(p.readAllStandardOutput()).trimmed();
+}
+
+// Every installed core, from <data>/packages/<vendor>/hardware/<arch>/<version>. AVR is always
+// bundled (ticked and locked); the others are remembered from last time.
+void PortableBuilder::loadCores()
+{
+    m_dataDir = cliConfig(QStringLiteral("directories.data"));
+    const QDir packages(QDir(m_dataDir).filePath(QStringLiteral("packages")));
+    const QStringList saved = QSettings().value(QStringLiteral("portable/cores")).toStringList();
+    const QDir::Filters dirs = QDir::Dirs | QDir::NoDotAndDotDot;
+    for (const QString &vendor : packages.entryList(dirs, QDir::Name)) {
+        const QDir hardware(packages.filePath(vendor + QStringLiteral("/hardware")));
+        for (const QString &arch : hardware.entryList(dirs, QDir::Name)) {
+            for (const QString &version : QDir(hardware.filePath(arch)).entryList(dirs, QDir::Name)) {
+                const QString path = QStringLiteral("packages/%1/hardware/%2/%3").arg(vendor, arch, version);
+                const QString id = vendor + QLatin1Char(':') + arch;
+                // Display name ("Arduino AVR Boards") from the core's installed.json.
+                QString name;
+                QFile installed(QDir(m_dataDir).filePath(path + QStringLiteral("/installed.json")));
+                if (installed.open(QIODevice::ReadOnly)) {
+                    const QJsonArray pkgs = QJsonDocument::fromJson(installed.readAll()).object()
+                                                .value(QStringLiteral("packages")).toArray();
+                    for (const QJsonValue &pkg : pkgs) {
+                        for (const QJsonValue &pl : pkg.toObject().value(QStringLiteral("platforms")).toArray()) {
+                            if (pl.toObject().value(QStringLiteral("architecture")).toString() == arch)
+                                name = pl.toObject().value(QStringLiteral("name")).toString();
+                        }
+                    }
+                }
+                const bool isAvr = id == QLatin1String(kAvrId);
+                auto *item = new QListWidgetItem(
+                    QStringLiteral("%1    (%2 %3)%4").arg(name.isEmpty() ? id : name, id, version,
+                                                           isAvr ? tr("    always included") : QString()));
+                item->setData(CorePathRole, path);
+                item->setData(CoreIdRole, id);
+                item->setFlags(isAvr ? item->flags() & ~Qt::ItemIsEnabled : item->flags() | Qt::ItemIsUserCheckable);
+                item->setCheckState(isAvr || saved.contains(id) ? Qt::Checked : Qt::Unchecked);
+                m_cores->addItem(item);
+            }
+        }
+    }
 }
 
 void PortableBuilder::loadLibraries()
@@ -372,15 +427,25 @@ void PortableBuilder::build()
     job.ch340 = ch340;
     job.copyName = m_copyName->text().trimmed().isEmpty() ? name : m_copyName->text().trimmed();
 
-    if (QDir::toNativeSeparators(job.target).size() > Portable::kMaxFolderPath
+    // The ESP8266 compiler needs a much shorter folder path than the others (Portable.h).
+    bool hasEsp8266 = false;
+    for (int i = 0; i < m_cores->count(); ++i)
+        hasEsp8266 |= m_cores->item(i)->checkState() == Qt::Checked
+                      && m_cores->item(i)->data(CoreIdRole).toString() == QLatin1String(Portable::kEsp8266Id);
+    const int maxPath = hasEsp8266 ? Portable::kMaxFolderPathEsp8266 : Portable::kMaxFolderPath;
+    if (QDir::toNativeSeparators(job.target).size() > maxPath
         && QMessageBox::question(this, windowTitle(),
-               tr("%1 is a long path (%2 characters). Compiling fails from folders with paths longer than "
+               tr("%1 is a long path (%2 characters). Compiling%4 fails from folders with paths longer than "
                   "about %3 characters (a Windows limit), so this copy would only work after being moved "
-                  "somewhere shorter, like the Desktop.\n\nCreate it here anyway?")
+                  "somewhere shorter, like C:\\REARMduino.\n\nCreate it here anyway?")
                    .arg(QDir::toNativeSeparators(job.target)).arg(QDir::toNativeSeparators(job.target).size())
-                   .arg(Portable::kMaxFolderPath))
+                   .arg(maxPath).arg(hasEsp8266 ? tr(" for ESP8266 boards") : QString()))
                != QMessageBox::Yes)
         return;
+    if (hasEsp8266)
+        log(tr("Note: ESP8266 boards only compile when this folder's path is at most about %1 characters "
+               "on the PC where it is used (for example C:\\REARMduino). Other boards allow about %2.")
+                .arg(Portable::kMaxFolderPathEsp8266).arg(Portable::kMaxFolderPath));
 
     // Never delete a folder that isn't an earlier portable build.
     if (QFileInfo::exists(job.target)) {
@@ -432,30 +497,43 @@ void PortableBuilder::build()
     }
     job.items.append({m_cli, dst.filePath(QStringLiteral("arduino-cli/") + QFileInfo(m_cli).fileName())});
 
-    const QString dataDir = cliConfig(QStringLiteral("directories.data"));
-    const QDir data(dataDir);
-    const QDir avr(data.filePath(QStringLiteral("packages/arduino/hardware/avr")));
-    const QStringList avrVersions = avr.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-    if (dataDir.isEmpty() || avrVersions.isEmpty()) {
+    const QDir data(m_dataDir);
+    QStringList corePaths;   // ticked cores, as paths under the data folder
+    QStringList coreIds;     // for the settings (without AVR, which is always there)
+    QStringList coreLabels;  // for the log
+    bool hasAvr = false;
+    for (int i = 0; i < m_cores->count(); ++i) {
+        const QListWidgetItem *item = m_cores->item(i);
+        if (item->checkState() != Qt::Checked)
+            continue;
+        const QString id = item->data(CoreIdRole).toString();
+        corePaths << item->data(CorePathRole).toString();
+        coreLabels << QStringLiteral("%1 %2").arg(id, QFileInfo(corePaths.last()).fileName());
+        if (id == QLatin1String(kAvrId))
+            hasAvr = true;
+        else if (!coreIds.contains(id))
+            coreIds << id;
+    }
+    if (m_dataDir.isEmpty() || !hasAvr) {
         log(tr("The AVR core (arduino:avr) is not installed here, so it can't be bundled. "
                "Install it once with: arduino-cli core install arduino:avr"), true);
         return;
     }
     const QDir dstData(dst.filePath(QStringLiteral("arduino/data")));
     // Indexes: without them arduino-cli downloads them on every command (fails offline).
-    for (const QString &f : {QStringLiteral("package_index.json"), QStringLiteral("package_index.json.sig"),
-                             QStringLiteral("library_index.json"), QStringLiteral("library_index.json.sig")}) {
-        if (data.exists(f))
-            job.items.append({data.filePath(f), dstData.filePath(f)});
-    }
+    // package_*index.json: other vendors' board indexes (ESP32, ESP8266...).
+    for (const QString &f : data.entryList({QStringLiteral("package_index.json*"), QStringLiteral("package_*index.json*"),
+                                            QStringLiteral("library_index.json*")}, QDir::Files))
+        job.items.append({data.filePath(f), dstData.filePath(f)});
     // Discovery/monitor tools arduino-cli needs to list ports and upload.
     if (data.exists(QStringLiteral("packages/builtin")))
         job.items.append({data.filePath(QStringLiteral("packages/builtin")), dstData.filePath(QStringLiteral("packages/builtin"))});
-    for (const QString &ver : avrVersions) {
-        const QString platform = QStringLiteral("packages/arduino/hardware/avr/") + ver;
+    QSet<QString> toolsAdded;   // cores can share a tool (ESP32 uses arduino's dfu-util)
+    for (const QString &platform : corePaths) {
         job.items.append({data.filePath(platform), dstData.filePath(platform)});
-        job.items.append({data.filePath(platform + QStringLiteral("/drivers")), dst.filePath(QStringLiteral("drivers/arduino"))});
-        // Its tools (avr-gcc, avrdude, arduinoOTA) at the versions it was installed with.
+        if (platform.startsWith(QLatin1String("packages/arduino/hardware/avr/")))
+            job.items.append({data.filePath(platform + QStringLiteral("/drivers")), dst.filePath(QStringLiteral("drivers/arduino"))});
+        // Its tools (compiler, uploader...) at the versions it was installed with.
         QFile installed(data.filePath(platform + QStringLiteral("/installed.json")));
         if (installed.open(QIODevice::ReadOnly)) {
             const QJsonArray packages = QJsonDocument::fromJson(installed.readAll()).object().value(QStringLiteral("packages")).toArray();
@@ -467,6 +545,9 @@ void PortableBuilder::build()
                                                  .arg(o.value(QStringLiteral("packager")).toString(),
                                                       o.value(QStringLiteral("name")).toString(),
                                                       o.value(QStringLiteral("version")).toString());
+                        if (toolsAdded.contains(tool))
+                            continue;
+                        toolsAdded.insert(tool);
                         if (data.exists(tool))
                             job.items.append({data.filePath(tool), dstData.filePath(tool)});
                         else
@@ -493,9 +574,10 @@ void PortableBuilder::build()
     s.setValue(QStringLiteral("portable/ch340"), m_ch340->text().trimmed());
     s.setValue(QStringLiteral("portable/zip"), m_zip->isChecked());
     s.setValue(QStringLiteral("portable/libraries"), libNames);
+    s.setValue(QStringLiteral("portable/cores"), coreIds);
 
-    log(tr("Creating %1 (AVR core %2, %3%4)...")
-            .arg(QDir::toNativeSeparators(job.target), avrVersions.join(QStringLiteral(", ")),
+    log(tr("Creating %1 (boards: %2; %3%4)...")
+            .arg(QDir::toNativeSeparators(job.target), coreLabels.join(QStringLiteral(", ")),
                  countText(libNames.size(), tr("library"), tr("libraries")),
                  ch340.isEmpty() ? tr(", no CH340 driver") : tr(", CH340 driver")));
     m_buildButton->setEnabled(false);
@@ -586,9 +668,11 @@ void PortableBuilder::build()
             "PC approved (needs internet that one time). After that it also works offline.\r\n"
             "Keep this folder together (do not move REARMduino.exe out of it), somewhere you can write\r\n"
             "(e.g. Desktop or Documents, not Program Files), with a short path: compiling fails if\r\n"
-            "the folder's path is longer than about 100 characters (a Windows limit).\r\n\r\n"
-            "Included: arduino-cli, the AVR core (Uno, Mega, Nano, ...), libraries in arduino\\user\\libraries,\r\n"
-            "USB drivers in drivers\\. Settings are saved in settings\\.\r\n\r\n"
+            "the folder's path is longer than about 100 characters, or about 55 for ESP8266 boards\r\n"
+            "(a Windows limit). C:\\REARMduino always works.\r\n\r\n"
+            "Included: arduino-cli, the boards in arduino\\data (AVR: Uno, Mega, Nano, ... and any others\r\n"
+            "that were added), libraries in arduino\\user\\libraries, USB drivers in drivers\\.\r\n"
+            "Libraries in this PC's Documents\\Arduino\\libraries are used too. Settings are saved in settings\\.\r\n\r\n"
             "Board not showing up? Tools > Check USB Drivers installs the bundled driver if the\r\n"
             "plugged-in board has none (Windows asks for administrator permission).\r\n\r\n"
             "This file switches on portable mode; do not delete it.\r\n");

@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QSettings>
+#include <QStandardPaths>
 
 namespace Portable {
 
@@ -62,6 +63,20 @@ QProcessEnvironment cliEnvironment()
 QString driversDir()
 {
     return QDir(appDir()).filePath(QStringLiteral("drivers"));
+}
+
+bool bundlesEsp8266()
+{
+    return isPortable() && QFileInfo(QDir(appDir()).filePath(QStringLiteral("arduino/data/packages/esp8266/hardware/esp8266"))).isDir();
+}
+
+QString pcLibrariesDir()
+{
+    if (!isPortable())
+        return {};
+    const QString dir = QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
+                            .filePath(QStringLiteral("Arduino/libraries"));
+    return QFileInfo(dir).isDir() ? dir : QString();
 }
 
 }

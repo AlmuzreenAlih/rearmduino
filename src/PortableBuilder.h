@@ -16,8 +16,8 @@ class QProgressBar;
 class QPushButton;
 class QThread;
 
-// Tools > Create Portable Version: copies this app, arduino-cli, the installed
-// AVR core (with its tools), the chosen libraries and USB drivers into one
+// Tools > Create Portable Version: copies this app, arduino-cli, the AVR core and the
+// other installed cores that are ticked (each with its tools), the chosen libraries and USB drivers into one
 // folder (and optionally a .zip) that runs on another PC without installing
 // anything. See Portable.h for the layout.
 class PortableBuilder : public QDialog
@@ -35,6 +35,7 @@ protected:
 private:
     struct Job;   // everything the worker needs (plain data)
 
+    void loadCores();
     void loadLibraries();
     void selectUsedBySketch();
     void setAllLibraries(bool checked);
@@ -48,10 +49,12 @@ private:
     QProcessEnvironment m_env;
     QString m_sketchDir;
     QString m_userDir;   // arduino-cli directories.user (libraries/ inside)
+    QString m_dataDir;   // arduino-cli directories.data (packages/ inside)
 
     QLineEdit *m_outDir = nullptr;
     QLineEdit *m_name = nullptr;
     QLineEdit *m_copyName = nullptr;   // who the copy is for (shown in the approval list)
+    QListWidget *m_cores = nullptr;   // installed boards (cores); AVR is always included
     QListWidget *m_libs = nullptr;
     QLabel *m_libCount = nullptr;
     QLineEdit *m_ch340 = nullptr;

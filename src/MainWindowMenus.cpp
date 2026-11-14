@@ -863,6 +863,10 @@ QStringList MainWindow::compileOptions() const
         options << QStringLiteral("-v");
     if (m_warnings != QLatin1String("default"))
         options << QStringLiteral("--warnings") << m_warnings;
+    // Portable copy: besides its bundled libraries, the ones this PC's user already has.
+    const QString pcLibraries = Portable::pcLibrariesDir();
+    if (!pcLibraries.isEmpty())
+        options << QStringLiteral("--libraries") << QDir::toNativeSeparators(pcLibraries);
     return options;
 }
 

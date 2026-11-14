@@ -19,6 +19,15 @@ Startup speed is the top priority: the main window must appear almost instantly,
 - Tools > Create Portable Version always bundles the Arduino drivers (from the AVR core) in
   `drivers/arduino`. The CH340 driver (clone boards) is bundled in `drivers/CH340` only if a
   folder/.zip/.exe is given in the builder.
+- Boards: the builder lists every installed core; AVR is always bundled, the others (ESP32,
+  ESP8266, ...) are ticked per copy and copied with the tools named in their `installed.json`.
+  arduino-cli reads boards from one data folder only, so a copy can't use boards installed on the
+  other PC; they have to be bundled.
+- Libraries: a portable copy also compiles with the other PC's `Documents\Arduino\libraries`
+  (`--libraries`, `Portable::pcLibrariesDir()`), besides the bundled ones.
+- Folder path limits (Windows 260-character limit inside the compilers), measured: AVR and ESP32
+  about 100 characters, **ESP8266 about 55** (core 3.1.2 compiled from 45, failed from 60). The
+  builder and the app's startup log warn using these (`Portable.h`).
 - Drivers are never installed silently: when a plugged-in board has no driver, the app offers the
   bundled one (UAC prompt). Without a bundled CH340 driver it only tells the user to install
   CH341SER.EXE from wch.cn (Windows Update often installs one when online).

@@ -31,9 +31,21 @@ QProcessEnvironment cliEnvironment();
 
 QString driversDir();   // <app>/drivers
 
+// Documents/Arduino/libraries on this PC (where the Arduino IDE keeps the user's libraries), if
+// portable and it exists, else empty. Passed to compiles as an extra library folder, so a portable
+// copy also finds the libraries its user already has.
+QString pcLibrariesDir();
+
 // The AVR compiler builds paths ~135 characters deep inside the folder, and
 // Windows tools fail past 260 ("No such file or directory"): keep the folder's
 // own path at most this long.
 constexpr int kMaxFolderPath = 100;
+
+// The ESP8266 compiler (xtensa-lx106-elf-gcc) reaches its own headers through paths about 200
+// characters deep inside the folder. Measured with core 3.1.2: compiles from a 45-character
+// folder path, fails from a 60-character one. ESP32 and AVR were fine past 100.
+constexpr int kMaxFolderPathEsp8266 = 55;
+constexpr char kEsp8266Id[] = "esp8266:esp8266";
+bool bundlesEsp8266();   // this portable copy carries the ESP8266 core
 
 }
