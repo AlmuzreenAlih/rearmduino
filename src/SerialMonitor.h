@@ -36,6 +36,8 @@ public:
     void reopenWithRetry(int attemptsLeft = 10);
     void setTheme(Theme::Mode mode);   // icon colors (the stylesheet is set by MainWindow)
     QString writeRaw(const QByteArray &data);   // error text, empty on success
+    // Puts "Sent: <text>" in the received view, on its own line (Sent color).
+    void showSent(const QString &text);
 
 signals:
     void sent(const QString &text);          // text as typed, without line ending
@@ -62,6 +64,7 @@ private:
     QComboBox *m_endingCombo = nullptr;
     QToolButton *m_timestampButton = nullptr;
     bool m_atLineStart = true;   // next received char starts a line (timestamp goes here)
+    Theme::Mode m_mode = Theme::Mode::Dark;
 
     // Incoming data is batched (fast streams would otherwise flood the UI).
     QTextDecoder *m_decoder = nullptr;

@@ -10,6 +10,7 @@
 #include <QScrollBar>
 #include <QSettings>
 #include <QTextCodec>
+#include <QTextBlock>
 #include <QTextCursor>
 #include <QTime>
 #include <QTimer>
@@ -22,6 +23,7 @@ const int kBaudRates[] = {300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 7488
 constexpr int kDefaultBaud = 9600;
 constexpr int kFlushIntervalMs = 30;
 constexpr int kMaxLines = 5000;
+constexpr int kSentState = 1;   // QTextBlock user state of a "Sent:" line
 }
 
 SerialMonitor::SerialMonitor(QWidget *parent)
@@ -277,7 +279,7 @@ void SerialMonitor::flushReceived()
     const bool atBottom = bar->value() >= bar->maximum() - 2;
     QTextCursor cursor(m_view->document());
     cursor.movePosition(QTextCursor::End);
-    cursor.insertText(m_pending);
+    cursor.insertText(m_pending, QTextCharFormat());   // plain, not the color of a "Sent:" line
     m_pending.clear();
     if (atBottom)   // don't yank the view while the user scrolls back
         bar->setValue(bar->maximum());
@@ -304,7 +306,36 @@ void SerialMonitor::onBaudChanged(int index)
 
 void SerialMonitor::setTheme(Theme::Mode mode)
 {
+    m_mode = mode;
     m_timestampButton->setIcon(Theme::svgIcon(QStringLiteral(":/icons/clock.svg"), Theme::colors(mode).text, 16));
+    // Recolor the "Sent:" lines (marked with block state kSentState).
+    QTextCharFormat format;
+    format.setForeground(Theme::logColor(Theme::LogKind::Sent, mode));
+    for (QTextBlock b = m_view->document()->begin(); b.isValid(); b = b.next()) {
+        if (b.userState() != kSentState)
+            continue;
+        QTextCursor c(b);
+        c.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+        c.setCharFormat(format);
+    }
+}
+
+void SerialMonitor::showSent(const QString &text)
+{
+    flushReceived();   // keep the order: what arrived before comes first
+    QTextCursor cursor(m_view->document());
+    cursor.movePosition(QTextCursor::End);
+    if (!m_atLineStart)
+        cursor.insertText(QStringLiteral("\n"), QTextCharFormat());   // a reply still on its line
+    QTextCharFormat format;
+    format.setForeground(Theme::logColor(Theme::LogKind::Sent, m_mode));
+    const QString stamp = m_timestampButton->isChecked()
+                              ? QTime::currentTime().toString(QStringLiteral("HH:mm:ss.zzz -> ")) : QString();
+    cursor.insertText(stamp + QStringLiteral("Sent: ") + text, format);
+    cursor.block().setUserState(kSentState);
+    cursor.insertText(QStringLiteral("\n"), QTextCharFormat());
+    m_atLineStart = true;
+    m_view->verticalScrollBar()->setValue(m_view->verticalScrollBar()->maximum());   // just sent: show it
 }
 
 void SerialMonitor::updateHeader()

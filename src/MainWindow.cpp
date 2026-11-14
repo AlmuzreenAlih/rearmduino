@@ -347,7 +347,12 @@ QString MainWindow::manualSend(const QByteArray &data, const QString &label)
         appendLog(tr("Not sent (%1): %2").arg(label, error), Theme::LogKind::Error);
         return error;
     }
-    appendLog(QStringLiteral("Sent: %1  (%2)").arg(QString::fromUtf8(data), label), Theme::LogKind::Sent);
+    // With the Serial Command Guide showing, Output is hidden: put the line in the
+    // Serial Monitor instead, between the board's replies.
+    if (m_bottomTabs->currentIndex() == 2)
+        m_serial->showSent(QString::fromUtf8(data));
+    else
+        appendLog(QStringLiteral("Sent: %1  (%2)").arg(QString::fromUtf8(data), label), Theme::LogKind::Sent);
     return {};
 }
 
