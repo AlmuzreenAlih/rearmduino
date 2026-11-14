@@ -13,4 +13,4 @@ set BUILDDIR=%~dp0..\build-win-%CONFIG%
 cmake -S "%~dp0.." -B "%BUILDDIR%" -G Ninja -DCMAKE_BUILD_TYPE=%CONFIG% -DCMAKE_PREFIX_PATH=%QTDIR% || exit /b 1
 cmake --build "%BUILDDIR%" || exit /b 1
 cmake --build "%BUILDDIR%" --target deploy || exit /b 1
-echo Built: %BUILDDIR%\myide.exe
+echo Built: %BUILDDIR%\REARMduino.exe

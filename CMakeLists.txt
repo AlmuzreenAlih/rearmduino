@@ -70,6 +70,8 @@ add_executable(myide WIN32
 if(WIN32)
     target_sources(myide PRIVATE resources/app/rearmduino.rc)   # .exe icon in Explorer/taskbar
 endif()
+# The program file is REARMduino(.exe); the CMake target stays "myide".
+set_target_properties(myide PROPERTIES OUTPUT_NAME REARMduino)
 
 target_include_directories(myide PRIVATE ${QSCINTILLA_INCLUDE_DIR})
 target_compile_definitions(myide PRIVATE MYIDE_VERSION="${PROJECT_VERSION}")
@@ -94,7 +96,7 @@ if(WIN32)
     find_program(WINDEPLOYQT windeployqt HINTS "${QT_LIB_DIR}/../bin")
     get_filename_component(QSCI_DLL_DIR "${QT_LIB_DIR}/../bin" ABSOLUTE)
     # --printsupport: QScintilla needs Qt5PrintSupport.dll, but windeployqt only
-    # scans myide.exe's own imports, so it can't see that dependency.
+    # scans REARMduino.exe's own imports, so it can't see that dependency.
     add_custom_target(deploy
         COMMAND "${WINDEPLOYQT}" --no-translations --no-compiler-runtime --printsupport
                 $<IF:$<CONFIG:Debug>,--debug,--release> "$<TARGET_FILE:myide>"

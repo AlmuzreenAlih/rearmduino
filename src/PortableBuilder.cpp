@@ -396,11 +396,11 @@ void PortableBuilder::build()
     if (app.exists(QStringLiteral("Qt5Cored.dll"))) {
         QMessageBox::warning(this, windowTitle(), tr("This is a Debug build; its DLLs don't run on other PCs. "
                                                      "Create the portable version from the Release build "
-                                                     "(build-win-Release\\myide.exe)."));
+                                                     "(build-win-Release\\REARMduino.exe)."));
         return;
     }
     const QDir dst(job.target);
-    job.items.append({app.filePath(QStringLiteral("myide.exe")), dst.filePath(QStringLiteral("myide.exe"))});
+    job.items.append({app.filePath(QStringLiteral("REARMduino.exe")), dst.filePath(QStringLiteral("REARMduino.exe"))});
     for (const QString &dll : app.entryList({QStringLiteral("*.dll")}, QDir::Files))
         job.items.append({app.filePath(dll), dst.filePath(dll)});
     for (const QString &plugins : {QStringLiteral("platforms"), QStringLiteral("styles"), QStringLiteral("imageformats"),
@@ -572,8 +572,8 @@ void PortableBuilder::build()
         marker.write(
             "REARMduino portable version\r\n"
             "===========================\r\n\r\n"
-            "Start: double-click myide.exe. Nothing needs to be installed.\r\n"
-            "Keep this folder together (do not move myide.exe out of it), somewhere you can write\r\n"
+            "Start: double-click REARMduino.exe. Nothing needs to be installed.\r\n"
+            "Keep this folder together (do not move REARMduino.exe out of it), somewhere you can write\r\n"
             "(e.g. Desktop or Documents, not Program Files), with a short path: compiling fails if\r\n"
             "the folder's path is longer than about 100 characters (a Windows limit).\r\n\r\n"
             "Included: arduino-cli, the AVR core (Uno, Mega, Nano, ...), libraries in arduino\\user\\libraries,\r\n"

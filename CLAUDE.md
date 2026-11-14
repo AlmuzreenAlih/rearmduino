@@ -5,8 +5,9 @@ Startup speed is the top priority: the main window must appear almost instantly,
 
 ## Name and logo
 
-- User-facing name: **REARMduino** (window title, About, portable readme/folder name).
-- Internal name stays `myide`: CMake target and `myide.exe`, QSettings organization/application
+- User-facing name: **REARMduino** (window title `<sketch> | REARMduino`, About, portable
+  readme/folder name). The program file is `REARMduino.exe` / `REARMduino` (CMake `OUTPUT_NAME`).
+- Internal name stays `myide`: CMake target and project, QSettings organization/application
   (registry `HKCU\Software\myide\myide`, or `settings/myide/myide.ini` in a portable copy), temp
   folders, `linux/99-myide-usb-reset.rules`. Renaming the QSettings names would reset users' settings.
 - Logo: `resources/app/` (`rearmduino-512.png` is the master). The 16-256 px PNGs are in

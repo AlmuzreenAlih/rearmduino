@@ -603,7 +603,7 @@ void MainWindow::updateTitle()
     QString name = QFileInfo(m_sketchFile).completeBaseName();
     if (m_sketchIsTemp)
         name += tr(" (not saved)");
-    setWindowTitle(QStringLiteral("%1[*] - REARMduino%2").arg(name, Portable::isPortable() ? tr(" (portable)") : QString()));
+    setWindowTitle(QStringLiteral("%1[*] | REARMduino").arg(name));
     setWindowModified(anyModified());
 }
 
