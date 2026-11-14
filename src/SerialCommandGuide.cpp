@@ -10,7 +10,6 @@
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QHBoxLayout>
-#include <QHeaderView>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -18,11 +17,12 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QSaveFile>
+#include <QScrollArea>
 #include <QStyle>
 #include <QTimer>
 #include <QToolButton>
-#include <QTreeWidget>
 #include <QVBoxLayout>
 
 namespace {
@@ -41,8 +41,8 @@ QString SerialCommandGuide::fileName()
     return QString::fromLatin1(kFileName);
 }
 
-SerialCommandGuide::SerialCommandGuide(QWidget *parent)
-    : QWidget(parent)
+SerialCommandGuide::SerialCommandGuide(Sender sender, QWidget *parent)
+    : QWidget(parent), m_sender(std::move(sender))
 {
     setObjectName(QStringLiteral("commandGuide"));
     setAttribute(Qt::WA_StyledBackground);
@@ -68,29 +68,19 @@ SerialCommandGuide::SerialCommandGuide(QWidget *parent)
     header->addWidget(m_add);
     layout->addLayout(header);
 
-    m_list = new QTreeWidget;
-    m_list->setObjectName(QStringLiteral("commandList"));
-    m_list->setColumnCount(2);
-    m_list->setHeaderLabels({tr("Serial Text Command"), tr("Command Name")});
-    m_list->setRootIsDecorated(false);
-    m_list->setUniformRowHeights(true);
-    m_list->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_list->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_list->setFrameShape(QFrame::NoFrame);
-    m_list->setContextMenuPolicy(Qt::CustomContextMenu);
-    m_list->header()->setSectionsMovable(false);
-    m_list->header()->setSectionResizeMode(0, QHeaderView::Interactive);
-    m_list->header()->setStretchLastSection(true);
-    m_list->setColumnWidth(0, 260);
-    connect(m_list, &QTreeWidget::customContextMenuRequested, this, &SerialCommandGuide::showMenu);
-    connect(m_list, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *item) {
-        editCommand(m_list->indexOfTopLevelItem(item));
-    });
-    layout->addWidget(m_list, 1);
-
-    m_empty = new QLabel(tr("No commands yet. Click + Add."));
-    m_empty->setObjectName(QStringLiteral("manualEmpty"));
-    layout->addWidget(m_empty);
+    auto *scroll = new QScrollArea;
+    scroll->setObjectName(QStringLiteral("manualScroll"));
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidgetResizable(true);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    auto *list = new QWidget;
+    list->setObjectName(QStringLiteral("manualList"));
+    list->setAttribute(Qt::WA_StyledBackground);
+    m_rows = new QVBoxLayout(list);
+    m_rows->setContentsMargins(0, 0, 4, 0);
+    m_rows->setSpacing(6);
+    scroll->setWidget(list);
+    layout->addWidget(scroll, 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -182,16 +172,63 @@ QString SerialCommandGuide::toJson() const
 
 void SerialCommandGuide::rebuild()
 {
-    m_list->clear();
-    const QFont mono = Theme::monoFont(10);
-    for (const Command &c : m_commands) {
-        auto *item = new QTreeWidgetItem(m_list, {c.command, c.name});
-        item->setFont(0, mono);
-        item->setToolTip(0, tr("Double-click to edit, right-click for more."));
+    QLayoutItem *li;
+    while ((li = m_rows->takeAt(0)) != nullptr) {
+        if (QWidget *w = li->widget()) {
+            w->hide();
+            w->deleteLater();   // may hold the button whose menu triggered this
+        }
+        delete li;
     }
     m_add->setEnabled(m_loadError.isEmpty());
-    m_empty->setVisible(m_commands.isEmpty() && m_loadError.isEmpty());
-    m_list->setToolTip(QDir::toNativeSeparators(QDir(m_dir).filePath(fileName())));
+
+    if (m_commands.isEmpty() && m_loadError.isEmpty()) {
+        auto *empty = new QLabel(tr("No commands yet. Click + Add."));
+        empty->setObjectName(QStringLiteral("manualEmpty"));
+        m_rows->addWidget(empty);
+    }
+    const QFont mono = Theme::monoFont(10);
+    for (int i = 0; i < m_commands.size(); ++i) {
+        // [command] - name
+        auto *row = new QWidget;
+        row->setContextMenuPolicy(Qt::CustomContextMenu);
+        auto *rowLayout = new QHBoxLayout(row);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+        rowLayout->setSpacing(8);
+        auto *button = new QPushButton(m_commands[i].command);
+        button->setObjectName(QStringLiteral("commandButton"));
+        button->setFont(mono);
+        button->setAutoDefault(false);
+        button->setCursor(Qt::PointingHandCursor);
+        button->setContextMenuPolicy(Qt::CustomContextMenu);
+        button->setToolTip(tr("Click to send \"%1\" to the serial port.\nRight-click to edit, move, copy or delete.")
+                               .arg(m_commands[i].command));
+        connect(button, &QPushButton::clicked, this, [this, i] { sendCommand(i); });
+        connect(button, &QPushButton::customContextMenuRequested, this, [this, button, i](const QPoint &pos) {
+            showMenu(i, button->mapToGlobal(pos));
+        });
+        connect(row, &QWidget::customContextMenuRequested, this, [this, row, i](const QPoint &pos) {
+            showMenu(i, row->mapToGlobal(pos));
+        });
+        auto *name = new QLabel(QStringLiteral("- ") + m_commands[i].name);
+        name->setObjectName(QStringLiteral("commandName"));
+        rowLayout->addWidget(button);
+        rowLayout->addWidget(name, 1);
+        m_rows->addWidget(row);
+    }
+    m_rows->addStretch(1);
+}
+
+void SerialCommandGuide::sendCommand(int index)
+{
+    if (index < 0 || index >= m_commands.size())
+        return;
+    const Command &c = m_commands[index];
+    const QString error = m_sender(c.command.toUtf8(), c.name);
+    if (error.isEmpty())
+        setStatus(tr("Sent \"%1\"  (%2)").arg(c.command, c.name), false);
+    else
+        setStatus(tr("Not sent: %1").arg(error), true);
 }
 
 void SerialCommandGuide::setStatus(const QString &text, bool isError)
@@ -202,18 +239,11 @@ void SerialCommandGuide::setStatus(const QString &text, bool isError)
     m_status->style()->polish(m_status);
 }
 
-void SerialCommandGuide::showMenu(const QPoint &pos)
+void SerialCommandGuide::showMenu(int index, const QPoint &globalPos)
 {
-    if (!m_loadError.isEmpty())
+    if (!m_loadError.isEmpty() || index < 0 || index >= m_commands.size())
         return;
-    QTreeWidgetItem *item = m_list->itemAt(pos);
     QMenu menu(this);
-    if (!item) {
-        menu.addAction(tr("Add..."), this, &SerialCommandGuide::addCommand);
-        menu.exec(m_list->viewport()->mapToGlobal(pos));
-        return;
-    }
-    const int index = m_list->indexOfTopLevelItem(item);
     QAction *copy = menu.addAction(tr("Copy Command"));
     QAction *edit = menu.addAction(tr("Edit..."));
     QAction *up = menu.addAction(tr("Move Up"));
@@ -222,8 +252,8 @@ void SerialCommandGuide::showMenu(const QPoint &pos)
     QAction *del = menu.addAction(tr("Delete"));
     up->setEnabled(index > 0);
     down->setEnabled(index + 1 < m_commands.size());
-    QAction *chosen = menu.exec(m_list->viewport()->mapToGlobal(pos));
-    // Deferred: the list is rebuilt (its items deleted) by these.
+    QAction *chosen = menu.exec(globalPos);
+    // Deferred: the rows are rebuilt (deleted) by these.
     if (chosen == copy)
         copyCommand(index);
     else if (chosen == edit)
@@ -250,7 +280,6 @@ void SerialCommandGuide::addCommand()
     m_commands.append(cmd);
     save();
     rebuild();
-    m_list->setCurrentItem(m_list->topLevelItem(m_commands.size() - 1));
 }
 
 void SerialCommandGuide::editCommand(int index)
@@ -263,7 +292,6 @@ void SerialCommandGuide::editCommand(int index)
     m_commands[index] = cmd;
     save();
     rebuild();
-    m_list->setCurrentItem(m_list->topLevelItem(index));
 }
 
 void SerialCommandGuide::removeCommand(int index)
@@ -287,7 +315,6 @@ void SerialCommandGuide::moveCommand(int index, int delta)
     m_commands.swapItemsAt(index, to);
     save();
     rebuild();
-    m_list->setCurrentItem(m_list->topLevelItem(to));
 }
 
 void SerialCommandGuide::copyCommand(int index)

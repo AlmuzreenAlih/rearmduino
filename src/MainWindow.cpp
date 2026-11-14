@@ -260,7 +260,7 @@ QWidget *MainWindow::createOutputPane()
     m_bottomTabs->setTabToolTip(1, tr("Buttons that send to the serial port (saved in the sketch folder)"));
     m_bottomTabs->setTabVisible(1, kShowManualControl);
     m_bottomTabs->addTab(tr("Serial Command Guide"));
-    m_bottomTabs->setTabToolTip(2, tr("A list of the sketch's serial commands (saved in the sketch folder)"));
+    m_bottomTabs->setTabToolTip(2, tr("The sketch's serial commands; click one to send it (saved in the sketch folder)"));
     headerLayout->addWidget(m_bottomTabs);
     headerLayout->addStretch(1);
     layout->addWidget(header);
@@ -284,7 +284,10 @@ void MainWindow::showBottomTab(int index)
 {
     if (index == 2) {
         if (!m_guide) {
-            m_guide = new SerialCommandGuide;   // lazily, like Manual Control
+            // Lazily, like Manual Control; sends the same way (see manualSend).
+            m_guide = new SerialCommandGuide([this](const QByteArray &data, const QString &label) {
+                return manualSend(data, label);
+            });
             m_bottomStack->addWidget(m_guide);
             m_guide->setSketchDir(m_sketchDir);
         } else {
@@ -311,7 +314,7 @@ void MainWindow::showBottomTab(int index)
     m_manual->setFocus();   // hotkeys active right away
 }
 
-// Manual Control buttons: write to the toolbar's port through the Serial Monitor,
+// Manual Control and Serial Command Guide buttons: write to the toolbar's port through the Serial Monitor,
 // opening it if needed (so the board's replies are visible).
 QString MainWindow::manualSend(const QByteArray &data, const QString &label)
 {
@@ -333,7 +336,7 @@ QString MainWindow::manualSend(const QByteArray &data, const QString &label)
         if (m_serial && m_serial->isOpen()) {
             const QString note = tr("opened %1; the board restarts when the port opens. Press again once it's ready")
                                      .arg(currentPort());
-            appendLog(tr("Manual Control: %1.").arg(note), Theme::LogKind::Command);
+            appendLog(tr("Serial: %1.").arg(note), Theme::LogKind::Command);
             return note;
         }
         error = tr("cannot open %1 (see Output)").arg(currentPort());
@@ -341,7 +344,7 @@ QString MainWindow::manualSend(const QByteArray &data, const QString &label)
     if (error.isEmpty())
         error = m_serial->writeRaw(data + '\n');   // each command is one line
     if (!error.isEmpty()) {
-        appendLog(tr("Manual Control: not sent (%1): %2").arg(label, error), Theme::LogKind::Error);
+        appendLog(tr("Not sent (%1): %2").arg(label, error), Theme::LogKind::Error);
         return error;
     }
     appendLog(QStringLiteral("Sent: %1  (%2)").arg(QString::fromUtf8(data), label), Theme::LogKind::Sent);

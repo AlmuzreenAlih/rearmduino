@@ -343,24 +343,16 @@ QTabBar#outputTabs::tab:hover:!selected { color: @text@; }
 QTabBar#outputTabs::tab:selected { color: @text@; border-bottom: 2px solid @primary@; }
 
 QWidget#manualControl, QWidget#manualList, QWidget#commandGuide { background: @editorBg@; }
-QTreeWidget#commandList {
-    background: @editorBg@;
-    color: @text@;
-    border: none;
-    outline: 0;
-}
-QTreeWidget#commandList::item { padding: 4px 6px; border-bottom: 1px solid @border@; }
-QTreeWidget#commandList::item:hover { background: @hover@; }
-QTreeWidget#commandList::item:selected { background: @hover@; color: @text@; }
-QTreeWidget#commandList QHeaderView::section {
+QPushButton#commandButton {
     background: @window@;
-    color: @muted@;
-    border: none;
-    border-bottom: 1px solid @border@;
-    border-right: 1px solid @border@;
-    padding: 4px 6px;
-    font-weight: 600;
+    color: @text@;
+    border: 1px solid @border@;
+    border-radius: 6px;
+    padding: 5px 14px;
 }
+QPushButton#commandButton:hover { border-color: @secondary@; }
+QPushButton#commandButton:pressed { background: @secondary@; color: @onSecondary@; border-color: @secondary@; }
+QLabel#commandName { color: @text@; }
 QWidget#manualSeparator { background: @border@; }
 QScrollArea#manualScroll { background: transparent; border: none; }
 QLabel#manualTitle { color: @muted@; font-weight: 600; }
