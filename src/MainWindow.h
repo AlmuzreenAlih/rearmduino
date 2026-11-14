@@ -125,6 +125,8 @@ private:
     void onBoardsLoaded(const QJsonObject &json);
     void onPortsScanned(const QJsonObject &json);
     void startUpload();
+    void updatePortStatus();          // "(PLUGGED)" / "(DISCONNECTED)" on each port item
+    bool isPortPresent(const QString &address) const;
 
     void selectBoard(const QString &fqbn, const QString &name);
     QString currentFqbn() const;
@@ -184,6 +186,8 @@ private:
     QProcess *m_boardsProcess = nullptr;
     QProcess *m_portsProcess = nullptr;
     bool m_uploadAfterScan = false;
+    QTimer *m_portWatch = nullptr;    // local port check (no arduino-cli), every second
+    int m_portWasPresent = -1;        // last state of the selected port: -1 unknown, 0/1
 
     // Preferences
     qreal m_editorPointSize = 11;

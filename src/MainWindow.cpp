@@ -36,6 +36,7 @@
 #include <QPlainTextEdit>
 #include <QScrollBar>
 #include <QSettings>
+#include <QSerialPortInfo>
 #include <QHBoxLayout>
 #include <QSplitter>
 #include <QStackedWidget>
@@ -58,6 +59,19 @@ const char kDefaultBoardName[] = "Arduino UNO";
 constexpr int FqbnRole = Qt::UserRole;            // board combo + port combo (matched board)
 constexpr int PortAddressRole = Qt::UserRole + 1; // port combo
 constexpr int BoardNameRole = Qt::UserRole + 2;   // port combo (matched board)
+constexpr int PortLabelRole = Qt::UserRole + 3;   // port combo: label without the status
+
+// Port address as arduino-cli gives it: "COM3" on Windows, "/dev/ttyACM0" on Linux.
+bool portIn(const QList<QSerialPortInfo> &ports, const QString &address)
+{
+    if (address.isEmpty())
+        return false;
+    for (const QSerialPortInfo &info : ports) {
+        if (info.portName().compare(address, Qt::CaseInsensitive) == 0 || info.systemLocation() == address)
+            return true;
+    }
+    return false;
+}
 
 constexpr qreal kOutputPointSize = 10;
 // The Manual Control tab is hidden for now (code kept); set to true to bring it back.
@@ -210,18 +224,26 @@ void MainWindow::setupToolbar()
     toolbar->addWidget(new QLabel(tr("Port")));
     m_portCombo = new PortComboBox;
     m_portCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    m_portCombo->setMinimumContentsLength(8);
+    m_portCombo->setMinimumContentsLength(20);   // room for "COM3 (DISCONNECTED)"
     m_portCombo->setToolTip(tr("Open to scan for connected boards"));
     const QString savedPort = settings.value(QStringLiteral("port/address")).toString();
     if (!savedPort.isEmpty()) {
         m_portCombo->addItem(savedPort);
         m_portCombo->setItemData(0, savedPort, PortAddressRole);
+        m_portCombo->setItemData(0, savedPort, PortLabelRole);
     }
+    // Plugged/disconnected status: a cheap local check (QtSerialPort, no arduino-cli),
+    // started after the window is up.
+    m_portWatch = new QTimer(this);
+    m_portWatch->setInterval(1000);
+    connect(m_portWatch, &QTimer::timeout, this, &MainWindow::updatePortStatus);
+    QTimer::singleShot(500, this, [this] { updatePortStatus(); m_portWatch->start(); });
     connect(m_portCombo, &PortComboBox::popupAboutToShow, this, &MainWindow::scanPorts);
     connect(m_portCombo, QOverload<int>::of(&QComboBox::activated), this, &MainWindow::onPortActivated);
     connect(m_portCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
         if (index < 0)
             return;
+        m_portWasPresent = -1;   // a different port: don't report its state as a change
         QSettings().setValue(QStringLiteral("port/address"), currentPort());
         if (m_serial)
             m_serial->setPortName(currentPort());   // follows the toolbar; reopens if open
@@ -621,6 +643,11 @@ void MainWindow::upload()
         scanPorts();
         return;
     }
+    if (!isPortPresent(currentPort())) {
+        appendLog(tr("Error: %1 is disconnected. Plug the board in, or choose another port from the Port list.")
+                      .arg(currentPort()));
+        return;
+    }
     startUpload();
 }
 
@@ -962,11 +989,10 @@ void MainWindow::onPortsScanned(const QJsonObject &json)
         const QSignalBlocker blocker(m_portCombo);
         m_portCombo->clear();
         for (const Port &p : ports) {
-            const QString text = p.boardName.isEmpty() ? p.label
-                                                       : QStringLiteral("%1 (%2)").arg(p.label, p.boardName);
-            m_portCombo->addItem(text);
+            m_portCombo->addItem(p.label);   // status and board name added by updatePortStatus()
             const int i = m_portCombo->count() - 1;
             m_portCombo->setItemData(i, p.address, PortAddressRole);
+            m_portCombo->setItemData(i, p.label, PortLabelRole);
             m_portCombo->setItemData(i, p.fqbn, FqbnRole);
             m_portCombo->setItemData(i, p.boardName, BoardNameRole);
             if (p.address == previous)
@@ -978,6 +1004,7 @@ void MainWindow::onPortsScanned(const QJsonObject &json)
         }
         m_portCombo->setCurrentIndex(selectIndex);
     }
+    updatePortStatus();
 
     if (selectIndex < 0 && recognised == 1) {
         // Nothing (still) selected and exactly one board connected: pick it.
@@ -1001,6 +1028,43 @@ void MainWindow::onPortActivated(int index)
     const QString fqbn = m_portCombo->itemData(index, FqbnRole).toString();
     if (!fqbn.isEmpty() && fqbn != currentFqbn())
         selectBoard(fqbn, m_portCombo->itemData(index, BoardNameRole).toString());
+}
+
+// Is the port there right now? QSerialPortInfo is a quick local lookup (Windows:
+// device list, Linux: /sys), unlike "arduino-cli board list".
+bool MainWindow::isPortPresent(const QString &address) const
+{
+    return portIn(QSerialPortInfo::availablePorts(), address);
+}
+
+// Port items read "COM3 (PLUGGED) - Arduino Mega or Mega 2560" or "COM3 (DISCONNECTED)".
+void MainWindow::updatePortStatus()
+{
+    const QList<QSerialPortInfo> available = QSerialPortInfo::availablePorts();
+    auto present = [&available](const QString &address) { return portIn(available, address); };
+    for (int i = 0; i < m_portCombo->count(); ++i) {
+        const QString address = m_portCombo->itemData(i, PortAddressRole).toString();
+        QString label = m_portCombo->itemData(i, PortLabelRole).toString();
+        if (label.isEmpty())
+            label = address;
+        const bool here = present(address);
+        QString text = label + (here ? tr(" (PLUGGED)") : tr(" (DISCONNECTED)"));
+        const QString board = m_portCombo->itemData(i, BoardNameRole).toString();
+        if (!board.isEmpty())
+            text += QStringLiteral(" - ") + board;
+        if (m_portCombo->itemText(i) != text)
+            m_portCombo->setItemText(i, text);
+
+        if (i == m_portCombo->currentIndex()) {
+            const int state = here ? 1 : 0;
+            if (m_portWasPresent >= 0 && state != m_portWasPresent)
+                statusBar()->showMessage(here ? tr("%1 plugged in").arg(label)
+                                              : tr("%1 disconnected").arg(label), 5000);
+            m_portWasPresent = state;
+            m_portCombo->setToolTip(here ? tr("%1 is plugged in. Open to rescan.").arg(label)
+                                         : tr("%1 is disconnected. Plug the board in, or open to rescan.").arg(label));
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
