@@ -606,7 +606,7 @@ bool ManualControl::runDialog(Group group, Item &item, int editingIndex, const Q
 
     auto *sendEdit = new QLineEdit(item.send);
     sendEdit->setFont(Theme::monoFont(10));
-    sendEdit->setPlaceholderText(group == Relays ? tr("e.g. !q@") : tr("e.g. !MIXER_HOME@"));
+    sendEdit->setPlaceholderText(group == Relays ? tr("e.g. q") : tr("e.g. MIXER_HOME"));
     form->addRow(tr("Send"), sendEdit);
 
     QComboBox *mode = nullptr;

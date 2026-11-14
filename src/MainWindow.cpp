@@ -322,7 +322,7 @@ QString MainWindow::manualSend(const QByteArray &data, const QString &label)
         error = tr("cannot open %1 (see Output)").arg(currentPort());
     }
     if (error.isEmpty())
-        error = m_serial->writeRaw(data);
+        error = m_serial->writeRaw(data + '\n');   // each command is one line
     if (!error.isEmpty()) {
         appendLog(tr("Manual Control: not sent (%1): %2").arg(label, error), Theme::LogKind::Error);
         return error;
