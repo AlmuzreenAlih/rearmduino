@@ -21,6 +21,7 @@ class QStackedWidget;
 class QTabBar;
 class QTabWidget;
 class ManualControl;
+class SerialCommandGuide;
 class QTextDecoder;
 class QToolBar;
 class QsciScintilla;
@@ -70,7 +71,7 @@ private:
     void themeEditorScrollBars(QsciScintilla *editor, const QString &qss);
     void setupToolbar();
     QWidget *createOutputPane();
-    void showBottomTab(int index);   // 0 Output, 1 Manual Control
+    void showBottomTab(int index);   // 0 Output, 1 Manual Control (hidden), 2 Serial Command Guide
     QString manualSend(const QByteArray &data, const QString &label);
 
     // Menus (MainWindowMenus.cpp)
@@ -144,6 +145,7 @@ private:
     QTabBar *m_bottomTabs = nullptr;            // Output | Manual Control
     QStackedWidget *m_bottomStack = nullptr;
     ManualControl *m_manual = nullptr;          // created on first open
+    SerialCommandGuide *m_guide = nullptr;      // created on first open
     bool m_serialKeepFocus = false;             // opening the monitor for Manual Control
     QAction *m_verifyAction = nullptr;
     QAction *m_uploadAction = nullptr;

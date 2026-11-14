@@ -3,6 +3,7 @@
 #include "BoardComboBox.h"
 #include "PortComboBox.h"
 #include "ManualControl.h"
+#include "SerialCommandGuide.h"
 #include "SerialMonitor.h"
 
 #include <Qsci/qsciscintilla.h>
@@ -57,6 +58,8 @@ constexpr int PortAddressRole = Qt::UserRole + 1; // port combo
 constexpr int BoardNameRole = Qt::UserRole + 2;   // port combo (matched board)
 
 constexpr qreal kOutputPointSize = 10;
+// The Manual Control tab is hidden for now (code kept); set to true to bring it back.
+constexpr bool kShowManualControl = false;
 
 const char kDefaultSketch[] =
     "void setup() {\n"
@@ -236,7 +239,7 @@ QWidget *MainWindow::createOutputPane()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    // Tabs: Output | Manual Control (the latter created on first use).
+    // Tabs: Output | Manual Control (hidden) | Serial Command Guide (both created on first use).
     auto *header = new QWidget;
     header->setObjectName(QStringLiteral("outputHeaderRow"));
     header->setAttribute(Qt::WA_StyledBackground);
@@ -255,6 +258,9 @@ QWidget *MainWindow::createOutputPane()
     m_bottomTabs->addTab(tr("Output"));
     m_bottomTabs->addTab(tr("Manual Control"));
     m_bottomTabs->setTabToolTip(1, tr("Buttons that send to the serial port (saved in the sketch folder)"));
+    m_bottomTabs->setTabVisible(1, kShowManualControl);
+    m_bottomTabs->addTab(tr("Serial Command Guide"));
+    m_bottomTabs->setTabToolTip(2, tr("A list of the sketch's serial commands (saved in the sketch folder)"));
     headerLayout->addWidget(m_bottomTabs);
     headerLayout->addStretch(1);
     layout->addWidget(header);
@@ -276,6 +282,17 @@ QWidget *MainWindow::createOutputPane()
 
 void MainWindow::showBottomTab(int index)
 {
+    if (index == 2) {
+        if (!m_guide) {
+            m_guide = new SerialCommandGuide;   // lazily, like Manual Control
+            m_bottomStack->addWidget(m_guide);
+            m_guide->setSketchDir(m_sketchDir);
+        } else {
+            m_guide->reloadIfChanged();
+        }
+        m_bottomStack->setCurrentWidget(m_guide);
+        return;
+    }
     if (index != 1) {
         m_bottomStack->setCurrentWidget(m_output);
         return;
@@ -487,6 +504,8 @@ void MainWindow::resolveSketch(const QString &path)
     m_editor = editors().value(0);
     if (m_manual)
         m_manual->setSketchDir(m_sketchDir);   // buttons belong to the sketch
+    if (m_guide)
+        m_guide->setSketchDir(m_sketchDir);
 }
 
 // Writes every tab to its file (Verify/Upload do this too, since arduino-cli

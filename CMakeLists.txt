@@ -54,6 +54,8 @@ add_executable(myide WIN32
     src/SerialMonitor.h
     src/ManualControl.cpp
     src/ManualControl.h
+    src/SerialCommandGuide.cpp
+    src/SerialCommandGuide.h
     resources/resources.qrc
 )
 
