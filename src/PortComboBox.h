@@ -1,16 +1,25 @@
 #pragma once
 
 #include <QAbstractItemView>
+#include <QColor>
 #include <QComboBox>
 
 // QComboBox that announces when its popup is about to open, so the port list
-// can be rescanned on demand instead of at startup or by polling.
+// can be rescanned on demand (arduino-cli is not polled). It also paints the
+// " (PLUGGED)" / " (DISCONNECTED)" part of an item bold, in its status color.
 class PortComboBox : public QComboBox
 {
     Q_OBJECT
 
 public:
-    using QComboBox::QComboBox;
+    explicit PortComboBox(QWidget *parent = nullptr);
+
+    // Status words put into item texts by MainWindow (with a leading space).
+    static QString pluggedText();
+    static QString disconnectedText();
+    void setStatusColors(const QColor &plugged, const QColor &disconnected);
+    QColor pluggedColor() const { return m_plugged; }
+    QColor disconnectedColor() const { return m_disconnected; }
 
     void showPopup() override
     {
@@ -33,6 +42,11 @@ public:
 signals:
     void popupAboutToShow();
 
+protected:
+    void paintEvent(QPaintEvent *event) override;
+
 private:
     bool m_quiet = false;
+    QColor m_plugged;
+    QColor m_disconnected;
 };

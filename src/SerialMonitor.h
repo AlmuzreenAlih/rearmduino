@@ -42,6 +42,10 @@ public:
 signals:
     void sent(const QString &text);          // text as typed, without line ending
     void message(const QString &text, bool isError);
+    // The port could not be opened (other than "not found"), or the board stopped
+    // taking data: its USB chip may be stuck (motor/relay noise). MainWindow offers
+    // to restart the USB device.
+    void portStuck(const QString &portName, const QString &error);
 
 private slots:
     void send();
@@ -49,9 +53,11 @@ private slots:
     void flushReceived();
     void onError(QSerialPort::SerialPortError error);
     void onBaudChanged(int index);
+    void resetBoard();
 
 private:
     void updateHeader();
+    void checkWriteStuck();
 
     QSerialPort *m_port = nullptr;
     QString m_portName;
@@ -63,6 +69,9 @@ private:
     QComboBox *m_baudCombo = nullptr;
     QComboBox *m_endingCombo = nullptr;
     QToolButton *m_timestampButton = nullptr;
+    QToolButton *m_resetButton = nullptr;
+    QTimer *m_writeCheck = nullptr;   // data not leaving after a write: board stuck?
+    bool m_stuckReported = false;     // once per open
     bool m_atLineStart = true;   // next received char starts a line (timestamp goes here)
     Theme::Mode m_mode = Theme::Mode::Dark;
 

@@ -9,6 +9,7 @@
 #include "PortableBuilder.h"
 #include "UsbDrivers.h"
 #include "SerialCommandGuide.h"
+#include "SerialMonitor.h"
 #include "PortComboBox.h"
 #include "SettingsDialogs.h"
 
@@ -38,6 +39,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QPlainTextEdit>
 #include <QRegularExpression>
 #include <QSet>
@@ -847,6 +849,48 @@ void MainWindow::showPortableBuilder()
 {
     PortableBuilder dlg(cliPath(), Portable::cliEnvironment(), m_sketchDir, this);
     dlg.exec();
+}
+
+// The Serial Monitor could not open the port, or the board stopped taking data:
+// after motor/relay noise the board's USB chip can hang and Windows keeps the port
+// "busy" until the board is unplugged. Restarting the USB device does the same.
+void MainWindow::offerUsbRestart(const QString &portName, const QString &error)
+{
+    if (m_usbRestartBusy || portName.isEmpty())
+        return;
+    if (!UsbDrivers::supported()) {
+        appendLog(tr("%1 seems stuck (%2). Close any other program using it; otherwise unplug the board "
+                     "and plug it in again.").arg(portName, error), Theme::LogKind::Warning);
+        return;
+    }
+    m_usbRestartBusy = true;
+    QMessageBox box(QMessageBox::Question, tr("Port Stuck"),
+                    tr("%1 cannot be used: %2").arg(portName, error), QMessageBox::NoButton, this);
+    box.setInformativeText(
+        tr("If another program (for example the Arduino IDE's Serial Monitor) has %1 open, close it instead.\n\n"
+           "Otherwise the board's USB chip is probably stuck, which can happen when it switches a motor or relay. "
+           "Restarting its USB device is the same as unplugging the board and plugging it back in. "
+           "Windows will ask for administrator permission.").arg(portName));
+    QPushButton *restart = box.addButton(tr("Restart USB Device"), QMessageBox::AcceptRole);
+    box.addButton(QMessageBox::Cancel);
+    box.setDefaultButton(restart);
+    box.exec();
+    if (box.clickedButton() != restart) {
+        m_usbRestartBusy = false;
+        return;
+    }
+    if (m_serial)
+        m_serial->closePort();
+    appendLog(tr("Restarting the USB device of %1...").arg(portName), Theme::LogKind::Command);
+    UsbDrivers::restartPort(portName, this, [this, portName](bool ok, const QString &message) {
+        m_usbRestartBusy = false;
+        appendLog(message, ok ? Theme::LogKind::Success : Theme::LogKind::Error);
+        if (!ok)
+            return;
+        // Back on the same port name after re-enumeration: reopen (the board resets).
+        if (m_serial && m_serial->isVisible() && m_serial->portName() == portName)
+            m_serial->reopenWithRetry(10);
+    });
 }
 
 void MainWindow::checkUsbDrivers(bool interactive)

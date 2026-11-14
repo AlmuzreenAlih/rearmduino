@@ -294,13 +294,16 @@ QToolButton#serialButton:hover { background: @hover@; }
 QToolButton#serialButton:checked { border-color: @primary@; background: @hover@; }
 
 QWidget#serialControls { background: @window@; }
-QToolButton#timestampButton {
+QToolButton#timestampButton, QToolButton#resetButton {
     background: @editorBg@;
+    color: @text@;
     border: 1px solid @border@;
     border-radius: 6px;
     padding: 5px 7px;
 }
-QToolButton#timestampButton:hover { border-color: @muted@; }
+QToolButton#resetButton { padding: 5px 10px; }
+QToolButton#timestampButton:hover, QToolButton#resetButton:hover { border-color: @muted@; }
+QToolButton#resetButton:pressed { background: @hover@; }
 QToolButton#timestampButton:checked { border-color: @primary@; background: @hover@; }
 QLineEdit {
     background: @editorBg@;

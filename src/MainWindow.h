@@ -95,6 +95,7 @@ private:
     // Offers the bundled driver for plugged-in boards that have none. interactive:
     // from the menu (always reports); otherwise asks at most once per kind per session.
     void checkUsbDrivers(bool interactive);
+    void offerUsbRestart(const QString &portName, const QString &error);   // stuck/"busy" port
 
     // Sketch files (MainWindowMenus.cpp)
     bool maybeSave();
@@ -152,6 +153,7 @@ private:
     QStackedWidget *m_bottomStack = nullptr;
     ManualControl *m_manual = nullptr;          // created on first open
     SerialCommandGuide *m_guide = nullptr;      // created on first open
+    bool m_usbRestartBusy = false;              // restart prompt open / restart running
     QSet<int> m_driverPromptsShown;             // UsbDrivers::Kind values asked about this session
     bool m_serialKeepFocus = false;             // opening the monitor for Manual Control
     QAction *m_verifyAction = nullptr;

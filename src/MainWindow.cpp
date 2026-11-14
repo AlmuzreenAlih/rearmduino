@@ -762,6 +762,7 @@ void MainWindow::toggleSerialMonitor(bool show)
         connect(m_serial, &SerialMonitor::message, this, [this](const QString &text, bool isError) {
             appendLog(text, isError ? Theme::LogKind::Error : Theme::LogKind::Command);
         });
+        connect(m_serial, &SerialMonitor::portStuck, this, &MainWindow::offerUsbRestart);
         m_serial->setStyleSheet(Theme::styleSheet(m_theme));
         m_serial->setTheme(m_theme);
         const int total = m_topSplitter->width();
@@ -1048,7 +1049,7 @@ void MainWindow::updatePortStatus()
         if (label.isEmpty())
             label = address;
         const bool here = present(address);
-        QString text = label + (here ? tr(" (PLUGGED)") : tr(" (DISCONNECTED)"));
+        QString text = label + (here ? PortComboBox::pluggedText() : PortComboBox::disconnectedText());
         const QString board = m_portCombo->itemData(i, BoardNameRole).toString();
         if (!board.isEmpty())
             text += QStringLiteral(" - ") + board;
@@ -1123,6 +1124,7 @@ void MainWindow::applyTheme(Theme::Mode mode)
     if (m_serial)
         m_serial->setTheme(mode);
     m_serialAction->setIcon(Theme::svgIcon(QStringLiteral(":/icons/serial.svg"), c.text));
+    m_portCombo->setStatusColors(c.success, c.warning);   // (PLUGGED) green, (DISCONNECTED) amber
 
     m_verifyAction->setIcon(Theme::svgIcon(QStringLiteral(":/icons/verify.svg"), c.onSecondary));
     m_uploadAction->setIcon(Theme::svgIcon(QStringLiteral(":/icons/upload.svg"), c.onPrimary));

@@ -94,8 +94,19 @@ SerialMonitor::SerialMonitor(QWidget *parent)
         QSettings().setValue(QStringLiteral("serial/timestamps"), on);
     });
 
+    // Reset: restarts the sketch (DTR pulse, like the board's reset button). If the
+    // port is stuck, MainWindow offers to restart the USB device (portStuck).
+    m_resetButton = new QToolButton;
+    m_resetButton->setObjectName(QStringLiteral("resetButton"));
+    m_resetButton->setText(tr("Reset"));
+    m_resetButton->setToolTip(tr("Reset the board (restarts the sketch).\n"
+                                 "If the port is stuck or \"busy\", offers to restart its USB device,\n"
+                                 "like unplugging the board and plugging it back in."));
+    connect(m_resetButton, &QToolButton::clicked, this, &SerialMonitor::resetBoard);
+
     optionsLayout->addWidget(m_endingCombo, 1);
     optionsLayout->addWidget(m_baudCombo, 1);
+    optionsLayout->addWidget(m_resetButton);
     optionsLayout->addWidget(m_timestampButton);
     layout->addWidget(optionsRow);
 
@@ -107,6 +118,11 @@ SerialMonitor::SerialMonitor(QWidget *parent)
     m_flushTimer->setSingleShot(true);
     m_flushTimer->setInterval(kFlushIntervalMs);
     connect(m_flushTimer, &QTimer::timeout, this, &SerialMonitor::flushReceived);
+
+    m_writeCheck = new QTimer(this);
+    m_writeCheck->setSingleShot(true);
+    m_writeCheck->setInterval(2000);
+    connect(m_writeCheck, &QTimer::timeout, this, &SerialMonitor::checkWriteStuck);
 
     connect(m_input, &QLineEdit::returnPressed, this, &SerialMonitor::send);
     connect(m_sendButton, &QPushButton::clicked, this, &SerialMonitor::send);
@@ -158,10 +174,14 @@ bool SerialMonitor::openPort()
     m_port->setStopBits(QSerialPort::OneStop);
     m_port->setFlowControl(QSerialPort::NoFlowControl);
     if (!m_port->open(QIODevice::ReadWrite)) {
-        emit message(tr("Serial Monitor: cannot open %1: %2").arg(m_portName, m_port->errorString()), true);
+        const QString error = m_port->errorString();
+        emit message(tr("Serial Monitor: cannot open %1: %2").arg(m_portName, error), true);
         updateHeader();
+        if (m_port->error() != QSerialPort::DeviceNotFoundError)   // not found = unplugged
+            emit portStuck(m_portName, error);
         return false;
     }
+    m_stuckReported = false;
     // Like the Arduino IDE: assert DTR and RTS (native-USB boards only send with
     // DTR set; both asserted is the "run" state of ESP32 auto-reset circuits).
     m_port->setDataTerminalReady(true);
@@ -197,6 +217,7 @@ void SerialMonitor::reopenWithRetry(int attemptsLeft)
         m_port->setPortName(m_portName);
         m_port->setBaudRate(m_baudCombo->currentData().toInt());
         if (m_port->open(QIODevice::ReadWrite)) {
+            m_stuckReported = false;
             m_port->setDataTerminalReady(true);
             m_port->setRequestToSend(true);
             delete m_decoder;
@@ -227,6 +248,7 @@ void SerialMonitor::send()
         emit message(tr("Serial Monitor: write failed: %1").arg(m_port->errorString()), true);
         return;
     }
+    m_writeCheck->start();
     m_input->clear();
     emit sent(text);
 }
@@ -238,6 +260,7 @@ QString SerialMonitor::writeRaw(const QByteArray &data)
         return tr("%1 is not open").arg(m_portName.isEmpty() ? tr("the port") : m_portName);
     if (m_port->write(data) != data.size())
         return tr("write failed: %1").arg(m_port->errorString());
+    m_writeCheck->start();
     return {};
 }
 
@@ -293,6 +316,42 @@ void SerialMonitor::onError(QSerialPort::SerialPortError error)
         m_port->close();
         updateHeader();
     }
+}
+
+// Restart the sketch: DTR low then high resets an Arduino (as opening the port
+// does). Closed port: opening it is the reset.
+void SerialMonitor::resetBoard()
+{
+    if (!isOpen()) {
+        if (openPort())
+            emit message(tr("Serial Monitor: opened %1 (the board resets).").arg(m_portName), false);
+        return;   // a failed open already reported (and portStuck if not "not found")
+    }
+    if (!m_port->setDataTerminalReady(false) || !m_port->setRequestToSend(false)) {
+        const QString error = m_port->errorString();
+        emit message(tr("Serial Monitor: cannot reset the board on %1: %2").arg(m_portName, error), true);
+        emit portStuck(m_portName, error);
+        return;
+    }
+    QTimer::singleShot(100, this, [this] {
+        if (!isOpen())
+            return;
+        m_port->setDataTerminalReady(true);
+        m_port->setRequestToSend(true);
+    });
+    m_stuckReported = false;
+    emit message(tr("Serial Monitor: reset the board on %1.").arg(m_portName), false);
+}
+
+// Two seconds after a write, the data is still waiting: the board's USB chip is
+// not taking it (typically after motor/relay noise). Reported once per open.
+void SerialMonitor::checkWriteStuck()
+{
+    if (!isOpen() || m_port->bytesToWrite() == 0 || m_stuckReported)
+        return;
+    m_stuckReported = true;
+    emit message(tr("Serial Monitor: %1 is not taking data (%2 bytes waiting). The board may be stuck; "
+                    "press Reset.").arg(m_portName).arg(m_port->bytesToWrite()), true);
 }
 
 void SerialMonitor::onBaudChanged(int index)

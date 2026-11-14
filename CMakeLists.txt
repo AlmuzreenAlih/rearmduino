@@ -44,6 +44,7 @@ add_executable(myide WIN32
     src/MainWindowMenus.cpp
     src/SettingsDialogs.cpp
     src/SettingsDialogs.h
+    src/PortComboBox.cpp
     src/PortComboBox.h
     src/ArduinoLexer.h
     src/BoardComboBox.cpp

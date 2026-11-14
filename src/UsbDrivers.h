@@ -34,4 +34,10 @@ QString bundledDir(Kind kind);     // folder with this driver's files, empty if 
 // done(ok, message) on the context's thread.
 void install(Kind kind, QObject *context, std::function<void(bool ok, const QString &message)> done);
 
+// Restarts the USB device behind a serial port, like unplugging it and plugging it
+// back in (pnputil /restart-device, administrator rights via UAC). For a port left
+// "busy"/stuck after the board's USB chip was upset (motor or relay noise).
+// Calls done(ok, message) on the context's thread. Not Windows: done(false, hint).
+void restartPort(const QString &portName, QObject *context, std::function<void(bool ok, const QString &message)> done);
+
 }
