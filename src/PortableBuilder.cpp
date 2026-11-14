@@ -393,6 +393,12 @@ void PortableBuilder::build()
 
     // ---- What to copy (checked here, on the UI thread, so problems show before anything is written)
     const QDir app(Portable::appDir());
+    if (app.exists(QStringLiteral("Qt5Cored.dll"))) {
+        QMessageBox::warning(this, windowTitle(), tr("This is a Debug build; its DLLs don't run on other PCs. "
+                                                     "Create the portable version from the Release build "
+                                                     "(build-win-Release\\myide.exe)."));
+        return;
+    }
     const QDir dst(job.target);
     job.items.append({app.filePath(QStringLiteral("myide.exe")), dst.filePath(QStringLiteral("myide.exe"))});
     for (const QString &dll : app.entryList({QStringLiteral("*.dll")}, QDir::Files))
