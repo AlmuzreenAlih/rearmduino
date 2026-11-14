@@ -115,7 +115,8 @@ for fills and borders there, never for text (poor contrast on white).
 ## Startup-speed rules
 
 - Show the main window first; load everything else lazily (board list, port scan, library index).
-- No network calls at startup.
+- No network calls at startup. Approved exception: one `arduino-cli board list` port scan
+  3 seconds after the window appears (it may contact Arduino's servers to identify boards).
 - Keep dependencies minimal; don't add a new library without asking.
 
 ## Workflow

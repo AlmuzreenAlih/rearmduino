@@ -152,8 +152,11 @@ MainWindow::MainWindow(const QString &sketchPath, QWidget *parent)
     QTimer::singleShot(0, this, [this] { if (m_editor) m_editor->setFocus(); });
 
     // Fill the board list once the event loop runs (after the window is shown).
-    // Ports are only scanned on demand: `board list` can hit the network.
+    // Ports: one scan a few seconds after startup, so the list shows board names
+    // right away. `board list` can hit the network; this delayed scan is an
+    // approved exception to "no network at startup". Later scans are on demand.
     QTimer::singleShot(0, this, &MainWindow::loadBoards);
+    QTimer::singleShot(3000, this, &MainWindow::scanPorts);
     if (Portable::isPortable() && QDir::toNativeSeparators(Portable::appDir()).size() > Portable::kMaxFolderPath)
         appendLog(tr("Warning: this portable folder's path is long (%1 characters); compiling may fail with "
                      "\"No such file or directory\". Move the folder somewhere shorter, like the Desktop.")
@@ -1014,6 +1017,7 @@ void MainWindow::onPortsScanned(const QJsonObject &json)
     int selectIndex = -1;
     int autoIndex = -1;   // the only port with a recognised board, if exactly one
     int recognised = 0;
+    bool previousMissing = false;   // the selected port is not in the scan
     {
         const QSignalBlocker blocker(m_portCombo);
         m_portCombo->clear();
@@ -1030,6 +1034,15 @@ void MainWindow::onPortsScanned(const QJsonObject &json)
                 ++recognised;
                 autoIndex = i;
             }
+        }
+        // The selected port is gone: keep it, shown "(DISCONNECTED)", rather than
+        // silently dropping the selection (and the saved port).
+        if (selectIndex < 0 && !previous.isEmpty()) {
+            m_portCombo->addItem(previous);
+            selectIndex = m_portCombo->count() - 1;
+            m_portCombo->setItemData(selectIndex, previous, PortAddressRole);
+            m_portCombo->setItemData(selectIndex, previous, PortLabelRole);
+            previousMissing = true;
         }
         m_portCombo->setCurrentIndex(selectIndex);
     }
@@ -1057,12 +1070,16 @@ void MainWindow::onPortsScanned(const QJsonObject &json)
                       : tr("%1 is disconnected: selected the newly connected port %2. "
                            "The Serial Monitor was not opened.").arg(previous, label),
                   Theme::LogKind::Warning);
-    } else if (selectIndex < 0 && recognised == 1) {
-        // Nothing (still) selected and exactly one board connected: pick it.
+    } else if ((selectIndex < 0 || previousMissing) && recognised == 1) {
+        // Nothing selected, or the selected port is disconnected, and exactly one
+        // board connected: pick it (e.g. the board came back on another port).
+        const QString label = m_portCombo->itemData(autoIndex, PortLabelRole).toString();
         m_portCombo->setCurrentIndex(autoIndex);
         onPortActivated(autoIndex);
-    } else if (selectIndex < 0) {
-        QSettings().setValue(QStringLiteral("port/address"), QString());
+        if (previousMissing)
+            appendLog(tr("%1 is disconnected: selected %2, where a board is connected. "
+                         "The Serial Monitor was not opened.").arg(previous, label),
+                      Theme::LogKind::Warning);
     }
     if (ports.isEmpty())
         m_portCombo->setToolTip(tr("No ports found. Connect a board and open this list again."));
