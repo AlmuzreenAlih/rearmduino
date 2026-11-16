@@ -49,6 +49,8 @@ add_executable(myide WIN32
     src/ArduinoLexer.h
     src/BoardComboBox.cpp
     src/BoardComboBox.h
+    src/FindBar.cpp
+    src/FindBar.h
     src/Theme.cpp
     src/Theme.h
     src/Spinner.cpp

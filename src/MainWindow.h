@@ -2,6 +2,7 @@
 
 #include "Theme.h"
 
+#include <QElapsedTimer>
 #include <QHash>
 #include <QList>
 #include <QSet>
@@ -16,6 +17,7 @@ class QComboBox;
 class QJsonObject;
 class QMenu;
 class QPlainTextEdit;
+class QProgressBar;
 class QSplitter;
 class QStackedWidget;
 class QTabBar;
@@ -24,6 +26,8 @@ class ManualControl;
 class SerialCommandGuide;
 class QTextDecoder;
 class QToolBar;
+class QVBoxLayout;
+class FindBar;
 class QsciScintilla;
 class ArduinoLexer;
 class PortComboBox;
@@ -88,6 +92,8 @@ private:
     void editCommand(int op);
     void toggleComment();
     void find();
+    void replace();
+    void showFindBar(bool withReplace);
     void findNext(bool forward);
     void goToLine();
     void showSketchFolder();
@@ -145,6 +151,9 @@ private:
     void appendLog(const QString &line, Theme::LogKind kind);
     void flushPartialLine();
     void setBusy(bool busy);
+    void beginProgress(bool isUpload);            // Verify/Upload progress bar in the status bar
+    void updateProgress(const QString &output);   // follows arduino-cli's output
+    void tickProgress();
 
     Theme::Mode m_theme = Theme::Mode::Dark;
 
@@ -212,7 +221,21 @@ private:
     bool m_verbose = false;
     QString m_warnings = QStringLiteral("default");
 
-    QString m_findText;
+    // Find / Replace bar under the editor tabs, created on first use.
+    FindBar *m_findBar = nullptr;
+    QVBoxLayout *m_editorAreaLayout = nullptr;
+
+    // Verify/Upload progress. arduino-cli reports no compile progress, so compiling is shown
+    // against how long the last compile of the same sketch and board took (moving stripe the
+    // first time); uploading uses the uploader's own percentages when it prints them.
+    QProgressBar *m_progress = nullptr;
+    QTimer *m_progressTick = nullptr;
+    QElapsedTimer m_taskClock;
+    QHash<QString, qint64> m_compileMs;   // "<sketch dir>|<fqbn>" -> last compile time
+    QString m_progressKey;
+    qint64 m_compileEstimate = 0;
+    bool m_taskIsUpload = false;
+    bool m_uploadPhase = false;           // compiling is done, the uploader is running
     QString m_cliPath;
     QString m_sketchDir;   // folder passed to arduino-cli
     QString m_sketchFile;  // <dir>/<dirname>.ino

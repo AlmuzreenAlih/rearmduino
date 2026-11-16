@@ -28,6 +28,13 @@ Startup speed is the top priority: the main window must appear almost instantly,
 - Folder path limits (Windows 260-character limit inside the compilers), measured: AVR and ESP32
   about 100 characters, **ESP8266 about 55** (core 3.1.2 compiled from 45, failed from 60). The
   builder and the app's startup log warn using these (`Portable.h`).
+- Zip: made with Windows' `System32\tar.exe`. It crashes on file names outside the system code
+  page (seen: Cyrillic-named board files in the ESP32 and UNO R4 openocd tools), so files with
+  non-ASCII names are left out of the zip and listed in the builder's log; the folder keeps them.
+  With all boards the folder is about 6.8 GB (zip about 2 GB); some ESP32 paths pass 260
+  characters, so the zip should be extracted with WinRAR/7-Zip, not Explorer.
+- Updating a copy after an app change: send only the new `REARMduino.exe` to replace in the
+  folder; boards, libraries, settings and the license stay.
 - Drivers are never installed silently: when a plugged-in board has no driver, the app offers the
   bundled one (UAC prompt). Without a bundled CH340 driver it only tells the user to install
   CH341SER.EXE from wch.cn (Windows Update often installs one when online).
@@ -124,6 +131,13 @@ QScintilla ships no CMake config file. Find it with `find_path` / `find_library`
 - Every time the user sends something, add a line to the Output/logs pane: `Sent: <text>`
   (the text as typed, without the added line ending).
 - Create the Serial Monitor widget lazily on first open, not at startup.
+- Find / Replace (Ctrl+F / Ctrl+H, F3 / Shift+F3): a bar under the editor tabs (`src/FindBar.*`),
+  created on first use. It searches the editor text itself (not QScintilla's `findFirst`): Next,
+  Previous, wrap-around, "3 of 12" count, match case, whole word, Replace, Replace All (one undo).
+- Verify/Upload progress bar: in the status bar, right side. arduino-cli reports no compile
+  progress, so compiling fills against the last compile time of the same sketch + board (moving
+  stripe the first time); uploading uses the uploader's percentages when it prints them (esptool
+  always, avrdude only with verbose output), else the stripe.
 - Before uploading, close the serial port if the monitor has it open (otherwise the upload
   fails with "port busy", especially on Windows), then reopen it after the upload finishes.
 

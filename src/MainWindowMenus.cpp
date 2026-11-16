@@ -12,6 +12,7 @@
 #include "SerialMonitor.h"
 #include "PortComboBox.h"
 #include "SettingsDialogs.h"
+#include "FindBar.h"
 #ifdef MYIDE_ACTIVATION
 #include "Activation.h"
 #endif
@@ -51,6 +52,7 @@
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QUrl>
+#include <QVBoxLayout>
 
 #include <algorithm>
 
@@ -149,6 +151,7 @@ void MainWindow::setupMenus()
                    key(Qt::CTRL | Qt::Key_Slash));
     edit->addSeparator();
     registerAction(edit->addAction(tr("&Find..."), this, &MainWindow::find), "edit.find", key(Qt::CTRL | Qt::Key_F));
+    registerAction(edit->addAction(tr("&Replace..."), this, &MainWindow::replace), "edit.replace", key(Qt::CTRL | Qt::Key_H));
     registerAction(edit->addAction(tr("Find &Next"), this, [this] { findNext(true); }), "edit.findNext", key(Qt::Key_F3));
     registerAction(edit->addAction(tr("Find Pre&vious"), this, [this] { findNext(false); }), "edit.findPrevious",
                    key(Qt::SHIFT | Qt::Key_F3));
@@ -530,35 +533,36 @@ void MainWindow::toggleComment()
 
 void MainWindow::find()
 {
-    const QString initial = m_editor->hasSelectedText() ? m_editor->selectedText() : m_findText;
-    bool ok = false;
-    const QString text = QInputDialog::getText(this, tr("Find"), tr("Find:"), QLineEdit::Normal, initial, &ok);
-    if (!ok || text.isEmpty())
-        return;
-    m_findText = text;
-    findNext(true);
+    showFindBar(false);
 }
 
+void MainWindow::replace()
+{
+    showFindBar(true);
+}
+
+// The bar is created on first use (startup rule) and added under the editor tabs.
+void MainWindow::showFindBar(bool withReplace)
+{
+    if (!m_findBar) {
+        m_findBar = new FindBar;
+        m_findBar->setTheme(m_theme);
+        m_editorAreaLayout->addWidget(m_findBar);
+    }
+    m_findBar->setEditor(m_editor);
+    m_findBar->open(withReplace);
+}
+
+// Find Next / Find Previous (F3 / Shift+F3): work with the bar closed too, once something was searched.
 void MainWindow::findNext(bool forward)
 {
-    if (m_findText.isEmpty()) {
-        find();
+    if (!m_findBar || m_findBar->findText().isEmpty()) {
+        showFindBar(false);
         return;
     }
-    int lineFrom, indexFrom, lineTo, indexTo;
-    if (m_editor->hasSelectedText()) {
-        m_editor->getSelection(&lineFrom, &indexFrom, &lineTo, &indexTo);
-    } else {
-        m_editor->getCursorPosition(&lineFrom, &indexFrom);
-        lineTo = lineFrom;
-        indexTo = indexFrom;
-    }
-    // Start after the current match (forward) or before it (backward); wraps around.
-    const bool found = forward
-        ? m_editor->findFirst(m_findText, false, false, false, true, true, lineTo, indexTo)
-        : m_editor->findFirst(m_findText, false, false, false, true, false, lineFrom, indexFrom);
-    statusBar()->showMessage(found ? QString() : tr("\"%1\" not found").arg(m_findText), 3000);
-    m_editor->setFocus();
+    m_findBar->setEditor(m_editor);
+    if (!m_findBar->findNext(forward))
+        statusBar()->showMessage(tr("\"%1\" not found").arg(m_findBar->findText()), 3000);
 }
 
 void MainWindow::goToLine()

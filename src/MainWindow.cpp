@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "FindBar.h"
 #include "ArduinoLexer.h"
 #include "BoardComboBox.h"
 #include "PortComboBox.h"
@@ -16,6 +17,7 @@
 #include <QApplication>
 #include <QMenu>
 #include <QMenuBar>
+#include <QProgressBar>
 #include <QRegularExpression>
 #include <QScreen>
 #include <QTextBlock>
@@ -110,12 +112,20 @@ MainWindow::MainWindow(const QString &sketchPath, QWidget *parent)
     connect(m_tabs, &QTabWidget::currentChanged, this, [this](int index) {
         if (auto *editor = qobject_cast<QsciScintilla *>(m_tabs->widget(index)))
             m_editor = editor;
+        if (m_findBar)
+            m_findBar->setEditor(m_editor);
     });
     setupMenus();       // after the toolbar: menus reuse its actions
     applyShortcuts();   // defaults + Advanced Settings overrides
     m_topSplitter = new QSplitter(Qt::Horizontal);
     m_topSplitter->setChildrenCollapsible(false);
-    m_topSplitter->addWidget(m_tabs);
+    // The editor tabs sit in a plain container so the Find bar can be added under them later.
+    auto *editorArea = new QWidget;
+    m_editorAreaLayout = new QVBoxLayout(editorArea);
+    m_editorAreaLayout->setContentsMargins(0, 0, 0, 0);
+    m_editorAreaLayout->setSpacing(0);
+    m_editorAreaLayout->addWidget(m_tabs);
+    m_topSplitter->addWidget(editorArea);
 
     // Bottom: output/logs pane spanning the full width, 40% of the height at
     // startup (stretch 3:2 keeps the ratio when the window is resized).
@@ -720,7 +730,9 @@ void MainWindow::startTask(const QString &name, const QStringList &args)
     m_taskName = name;
 
     appendLog(QStringLiteral("> arduino-cli %1").arg(args.join(QLatin1Char(' '))), Theme::LogKind::Command);
+    m_taskIsUpload = args.contains(QStringLiteral("--upload"));
     setBusy(true);
+    beginProgress(m_taskIsUpload);
     m_process->setProcessEnvironment(Portable::cliEnvironment());
     m_process->start(cli, args);
 }
@@ -731,6 +743,7 @@ void MainWindow::onProcessOutput()
     static const QRegularExpression ansi(QStringLiteral("\x1b\\[[0-9;]*[A-Za-z]"));
     m_partialLine += m_decoder->toUnicode(m_process->readAll());
     m_partialLine.remove(ansi);   // on the joined buffer: an escape may span two reads
+    updateProgress(m_partialLine);
     int start = 0;
     int nl;
     while ((nl = m_partialLine.indexOf(QLatin1Char('\n'), start)) != -1) {
@@ -759,6 +772,9 @@ void MainWindow::onProcessFinished(int exitCode, QProcess::ExitStatus status)
         appendLog(tr("arduino-cli crashed."), Theme::LogKind::Error);
     else if (exitCode == 0)
         appendLog(tr("%1 finished: OK.").arg(m_taskName), Theme::LogKind::Success);
+    // A finished Verify is a full compile: remember how long it took for the next progress bar.
+    if (status == QProcess::NormalExit && exitCode == 0 && !m_taskIsUpload)
+        m_compileMs.insert(m_progressKey, m_taskClock.elapsed());
     else
         appendLog(tr("%1 failed (exit code %2).").arg(m_taskName).arg(exitCode), Theme::LogKind::Error);
     setBusy(false);
@@ -1259,6 +1275,8 @@ void MainWindow::applyTheme(Theme::Mode mode)
     }
     if (m_serial)
         m_serial->setTheme(mode);
+    if (m_findBar)
+        m_findBar->setTheme(mode);
     m_serialAction->setIcon(Theme::svgIcon(QStringLiteral(":/icons/serial.svg"), c.text));
     m_portCombo->setStatusColors(c.success, c.warning);   // (PLUGGED) green, (DISCONNECTED) amber
     m_boardSpinner->setColors(c.primary, c.editorBg);
@@ -1334,8 +1352,75 @@ void MainWindow::setBusy(bool busy)
     }
     m_verifyAction->setEnabled(!busy);
     m_uploadAction->setEnabled(!busy);
-    if (busy)
-        statusBar()->showMessage(m_taskName == tr("Upload") ? tr("Uploading...") : tr("Compiling..."));
-    else
+    if (busy) {
+        statusBar()->showMessage(tr("Compiling..."));
+    } else {
         statusBar()->clearMessage();
+        if (m_progress) {
+            m_progressTick->stop();
+            m_progress->hide();
+        }
+    }
+}
+
+void MainWindow::beginProgress(bool isUpload)
+{
+    if (!m_progress) {
+        m_progress = new QProgressBar;
+        m_progress->setTextVisible(false);
+        m_progress->setFixedSize(180, 10);
+        statusBar()->addPermanentWidget(m_progress);
+        m_progressTick = new QTimer(this);
+        m_progressTick->setInterval(100);
+        connect(m_progressTick, &QTimer::timeout, this, &MainWindow::tickProgress);
+    }
+    m_taskIsUpload = isUpload;
+    m_uploadPhase = false;
+    m_progressKey = m_sketchDir + QLatin1Char('|') + currentFqbn();
+    m_compileEstimate = m_compileMs.value(m_progressKey, 0);
+    m_taskClock.start();
+    // Range 0-0 is Qt's "busy" stripe: used until there is something to measure against.
+    m_progress->setRange(0, m_compileEstimate > 0 ? 1000 : 0);
+    m_progress->setValue(0);
+    m_progress->show();
+    if (m_compileEstimate > 0)
+        m_progressTick->start();
+}
+
+// Compiling: fills toward 95% over the time the last compile took, then waits there.
+void MainWindow::tickProgress()
+{
+    if (m_uploadPhase || m_compileEstimate <= 0)
+        return;
+    m_progress->setValue(int(qMin<qint64>(950, m_taskClock.elapsed() * 1000 / m_compileEstimate)));
+}
+
+// Called with the output not yet split into lines (uploaders redraw their progress in place).
+void MainWindow::updateProgress(const QString &output)
+{
+    if (!m_progress || !m_taskIsUpload)
+        return;
+    // esptool (ESP32/ESP8266): "Writing at 0x00010000... (42 %)".
+    static const QRegularExpression percentRe(QStringLiteral("\\((\\d{1,3}) ?%\\)"));
+    int percent = -1;
+    auto it = percentRe.globalMatch(output);
+    while (it.hasNext())
+        percent = it.next().captured(1).toInt();
+    // avrdude (verbose upload only): "Writing | #####", 50 marks when done.
+    const int bar = output.lastIndexOf(QLatin1String("Writing | "));
+    if (percent == -1 && bar != -1)
+        percent = qMin(100, output.mid(bar).count(QLatin1Char('#')) * 2);
+
+    // The size report ends the compile; ESP8266 prints none, so its first percentage does.
+    if (!m_uploadPhase && (percent != -1 || output.contains(QLatin1String("Sketch uses ")))) {
+        m_compileMs.insert(m_progressKey, m_taskClock.elapsed());
+        m_uploadPhase = true;
+        m_progressTick->stop();
+        m_progress->setRange(0, 0);
+        statusBar()->showMessage(tr("Uploading..."));
+    }
+    if (m_uploadPhase && percent != -1) {
+        m_progress->setRange(0, 100);
+        m_progress->setValue(qBound(0, percent, 100));
+    }
 }

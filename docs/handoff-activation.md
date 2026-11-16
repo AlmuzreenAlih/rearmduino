@@ -1,4 +1,4 @@
-# Handoff: machine activation for REARMduino (in progress)
+# Handoff: machine activation for REARMduino (done)
 
 Written 2026-11-14 at the end of a long session, so a new conversation can pick this up.
 Read `CLAUDE.md` first (project rules), then this.
@@ -33,9 +33,13 @@ Read `CLAUDE.md` first (project rules), then this.
 - **Step 4 (deploy) done, 2026-11-14**: backend pushed, migration 016 and the key are on the server.
 - **Step 5, first half done**: `build-win-Release` rebuilt with activation; the developer's PC
   (request code `BPVK-NQKM`, copy name `dev`) is approved on the live server and holds a license.
-- Left: build a portable copy for the partner (first full run of the builder's `copy.json`
-  writing: check the file is there and that the copy shows its own name in `ide_machines`),
-  then approve the partner's PC when they send their request code.
+- **Partner copy done (2026-11-14/15)**: the partner runs a portable copy. A later copy with all
+  boards (AVR, UNO R4, ESP32, ESP8266) was built on 2026-11-15; its zip needed the non-ASCII
+  file-name fix (see CLAUDE.md, "Portable version").
+- Since then (2026-11-17): Find/Replace bar and the Verify/Upload progress bar (CLAUDE.md, "UI layout").
+- Nothing is left open in this plan. Ideas mentioned but not built: an "app update only" zip in the
+  builder; mapping a long portable folder to a drive letter to lift the ESP8266 path limit; a hint
+  in the Output pane when a board does not answer a sent command.
 
 ## Where the app stands
 
