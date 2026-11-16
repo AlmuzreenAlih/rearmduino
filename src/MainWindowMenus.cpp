@@ -13,6 +13,7 @@
 #include "PortComboBox.h"
 #include "SettingsDialogs.h"
 #include "FindBar.h"
+#include "SymbolFinder.h"
 #ifdef MYIDE_ACTIVATION
 #include "Activation.h"
 #endif
@@ -157,6 +158,8 @@ void MainWindow::setupMenus()
                    key(Qt::SHIFT | Qt::Key_F3));
     registerAction(edit->addAction(tr("&Go to Line..."), this, &MainWindow::goToLine), "edit.goToLine",
                    key(Qt::CTRL | Qt::Key_L));
+    registerAction(edit->addAction(tr("Go to &Definition"), this, &MainWindow::goToDefinition), "edit.goToDefinition",
+                   key(Qt::Key_F12));
 
     // Sketch (Verify/Upload are the toolbar actions)
     QMenu *sketch = bar->addMenu(tr("&Sketch"));
@@ -577,6 +580,78 @@ void MainWindow::goToLine()
     m_editor->setCursorPosition(target - 1, 0);
     m_editor->ensureLineVisible(target - 1);
     m_editor->setFocus();
+}
+
+// Go to Definition (F12): jumps to where the name under the caret is declared, in any tab of
+// the sketch. The search reads the tabs' text (SymbolFinder); nothing runs until F12 is pressed.
+void MainWindow::goToDefinition()
+{
+    if (!m_editor)
+        return;
+    const QList<QsciScintilla *> tabs = editors();
+    QStringList texts;
+    for (const QsciScintilla *editor : tabs)
+        texts.append(editor->text());
+    const int file = tabs.indexOf(m_editor);
+    if (file < 0)
+        return;
+
+    // Editor positions are line + character index; the search works with offsets in the text.
+    // A character outside the Basic Multilingual Plane is one index but two QString units.
+    auto lineStart = [](const QString &text, int line) {
+        int start = 0;
+        for (int i = 0; i < line; ++i) {
+            const int newline = text.indexOf(QLatin1Char('\n'), start);
+            if (newline < 0)
+                return text.size();
+            start = newline + 1;
+        }
+        return start;
+    };
+    int line, index;
+    m_editor->getCursorPosition(&line, &index);
+    const QString &text = texts.at(file);
+    int caret = lineStart(text, line);
+    for (int i = 0; i < index && caret < text.size(); ++i)
+        caret += text.at(caret).isHighSurrogate() ? 2 : 1;
+
+    int wordStart = 0;
+    const QString name = SymbolFinder::identifierAt(text, caret, &wordStart);
+    if (name.isEmpty()) {
+        statusBar()->showMessage(tr("Put the cursor on a name first, then press F12"), 4000);
+        return;
+    }
+    if (SymbolFinder::isKeyword(name)) {
+        statusBar()->showMessage(tr("\"%1\" is a C++ keyword").arg(name), 4000);
+        return;
+    }
+    const SymbolFinder::Result found = SymbolFinder::findDefinition(texts, file, wordStart, name);
+    if (found.file < 0) {
+        statusBar()->showMessage(tr("\"%1\" is not defined in this sketch (it may come from a library or the Arduino core)")
+                                     .arg(name), 5000);
+        return;
+    }
+    if (found.file == file && found.pos == wordStart) {
+        statusBar()->showMessage(tr("This is where \"%1\" is defined").arg(name), 4000);
+        return;
+    }
+
+    QsciScintilla *target = tabs.at(found.file);
+    const QString &targetText = texts.at(found.file);
+    const int targetLine = targetText.left(found.pos).count(QLatin1Char('\n'));
+    const int start = lineStart(targetText, targetLine);
+    const int indexFrom = targetText.mid(start, found.pos - start).toUcs4().size();
+    m_tabs->setCurrentWidget(target);   // makes it m_editor
+    target->setSelection(targetLine, indexFrom, targetLine, indexFrom + name.toUcs4().size());
+    // Not already on screen: show it a third of the way down instead of on the last line.
+    const int first = int(target->SendScintilla(QsciScintilla::SCI_GETFIRSTVISIBLELINE));
+    const int onScreen = int(target->SendScintilla(QsciScintilla::SCI_LINESONSCREEN));
+    if (targetLine < first || targetLine >= first + onScreen - 1)
+        target->SendScintilla(QsciScintilla::SCI_SETFIRSTVISIBLELINE, qMax(0, targetLine - onScreen / 3));
+    target->ensureCursorVisible();
+    target->setFocus();
+    if (found.file != file)
+        statusBar()->showMessage(tr("\"%1\" is defined in the tab %2").arg(name, m_tabs->tabText(found.file).trimmed()), 4000);
 }
 
 void MainWindow::showSketchFolder()

@@ -150,6 +150,11 @@ QScintilla ships no CMake config file. Find it with `find_path` / `find_library`
 - Find / Replace (Ctrl+F / Ctrl+H, F3 / Shift+F3): a bar under the editor tabs (`src/FindBar.*`),
   created on first use. It searches the editor text itself (not QScintilla's `findFirst`): Next,
   Previous, wrap-around, "3 of 12" count, match case, whole word, Replace, Replace All (one undo).
+- Go to Definition (F12, Edit menu): jumps to where the name under the caret is declared, in any
+  tab (`src/SymbolFinder.*`). It reads the tabs' text when F12 is pressed: no language server, no
+  background work. It knows `#define`, functions, variables, parameters, struct/class/enum names
+  and enum constants, and respects `{ }` scopes; names from libraries or the Arduino core are not
+  found (status-bar message). It is a careful guess, not a C++ parser.
 - Verify/Upload progress bar: in the status bar, right side. arduino-cli reports no compile
   progress, so compiling fills against the last compile time of the same sketch + board (moving
   stripe the first time); uploading uses the uploader's percentages when it prints them (esptool

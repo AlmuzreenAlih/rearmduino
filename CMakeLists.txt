@@ -51,6 +51,8 @@ add_executable(myide WIN32
     src/BoardComboBox.h
     src/FindBar.cpp
     src/FindBar.h
+    src/SymbolFinder.cpp
+    src/SymbolFinder.h
     src/Theme.cpp
     src/Theme.h
     src/Spinner.cpp

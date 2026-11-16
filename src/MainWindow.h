@@ -96,6 +96,7 @@ private:
     void showFindBar(bool withReplace);
     void findNext(bool forward);
     void goToLine();
+    void goToDefinition();
     void showSketchFolder();
     void showAbout();
     void showPortableBuilder();
