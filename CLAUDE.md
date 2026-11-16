@@ -60,6 +60,22 @@ Startup speed is the top priority: the main window must appear almost instantly,
 - No new libraries for this: CNG (`bcrypt`) and WinHTTP are part of Windows.
 - Threat model: casual copying only. Don't add obfuscation or anti-tamper code.
 
+## Offline installer for a new Pi (Bullseye 64-bit)
+
+- `linux/make-installer.sh` runs on the working Pi and makes `~/REARMduino-installer` (+ `.tar`,
+  about 390 MB): the built app, the Qt runtime `.deb` files with all dependencies, arduino-cli,
+  `~/.arduino15` (boards/tools), `~/Arduino/libraries` and Arduino IDE 1.8.19. It needs internet
+  once (apt download of the `.deb` files, no sudo); it copies whatever is installed on that Pi, so
+  install extra boards/libraries there first, then re-run it.
+- `linux/install-offline.sh` goes into the bundle as `install.sh`. On the new Pi: `./install.sh`
+  (`NO_IDE=1` skips the Arduino IDE). No internet; sudo only for the `.deb` files, the dialout
+  group and the USB reset rule. It replaces `setup-arduino.sh` (same steps, from local files).
+- The app is shipped prebuilt (same OS and CPU), so the new Pi needs no compiler or `-dev` packages.
+- apt is pointed at the bundle's `debs/` as a local repository, so it installs only what the new
+  Pi is missing. The builder self-checks the `.deb` set against an empty package database.
+- In these scripts don't pipe into `grep -q` (with `pipefail` it randomly reads as a failure).
+- Not tested on a really fresh Pi yet (only into a throwaway home folder, without network).
+
 ## Tech stack (do not change without asking)
 
 - Language: C++17
